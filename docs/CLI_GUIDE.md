@@ -102,7 +102,9 @@ chunkhound mcp --http --cors --port 8080
 chunkhound mcp --stdio
 ```
 
-## Configuration Management
+### Configuration Management
+
+⚠️ **Implementation Status**: Configuration management is partially implemented. Basic functionality works but advanced features are under development.
 
 ### Server Management
 
@@ -121,29 +123,31 @@ chunkhound config list --config ./my-config.yaml
 
 #### `chunkhound config add` - Add Server
 
+⚠️ **Status**: Under Development
+
 ```bash
-# Add OpenAI server
+# Add OpenAI server (⚠️ Under Development)
 chunkhound config add openai \
   --type openai \
   --base-url https://api.openai.com/v1 \
   --model text-embedding-3-small \
   --default
 
-# Add local TEI server
+# Add local TEI server (⚠️ Under Development)
 chunkhound config add local-tei \
   --type tei \
   --base-url http://localhost:8080 \
   --batch-size 32 \
   --timeout 60
 
-# Add OpenAI-compatible server
+# Add OpenAI-compatible server (⚠️ Under Development)
 chunkhound config add custom-server \
   --type openai-compatible \
   --base-url https://api.custom.com/v1 \
   --model custom-embeddings \
   --api-key your-api-key
 
-# Add with custom health check interval
+# Add with custom health check interval (⚠️ Under Development)
 chunkhound config add production \
   --type openai-compatible \
   --base-url https://embeddings.company.com \
@@ -152,28 +156,34 @@ chunkhound config add production \
 
 #### `chunkhound config remove` - Remove Server
 
+⚠️ **Status**: Under Development
+
 ```bash
-# Remove a server
+# Remove a server (⚠️ Under Development)
 chunkhound config remove server-name
 
-# Use specific config file
+# Use specific config file (⚠️ Under Development)
 chunkhound config remove server-name --config ./my-config.yaml
 ```
 
 #### `chunkhound config enable/disable` - Server Control
 
+⚠️ **Status**: Under Development
+
 ```bash
-# Enable a server
+# Enable a server (⚠️ Under Development)
 chunkhound config enable server-name
 
-# Disable a server
+# Disable a server (⚠️ Under Development)
 chunkhound config disable server-name
 ```
 
 #### `chunkhound config set-default` - Set Default Server
 
+⚠️ **Status**: Under Development
+
 ```bash
-# Set default server
+# Set default server (⚠️ Under Development)
 chunkhound config set-default server-name
 ```
 
@@ -181,14 +191,16 @@ chunkhound config set-default server-name
 
 #### `chunkhound config test` - Test Server Connectivity
 
+⚠️ **Status**: Under Development
+
 ```bash
-# Test default server
+# Test default server (⚠️ Under Development)
 chunkhound config test
 
-# Test specific server
+# Test specific server (⚠️ Under Development)
 chunkhound config test server-name
 
-# Test with custom text
+# Test with custom text (⚠️ Under Development)
 chunkhound config test server-name --text "custom test phrase"
 ```
 
@@ -358,23 +370,27 @@ chunkhound config import source.yaml --config ./target-config.yaml
 #### `chunkhound config template` - Generate Templates
 
 ```bash
-# Generate basic template
-chunkhound config template
+# Generate basic template (⚠️ Under Development)
+chunkhound config template basic
 
-# Generate specific template type
-chunkhound config template --type local
-chunkhound config template --type advanced
-chunkhound config template --type production
+# Generate specific template type (⚠️ Under Development)
+chunkhound config template openai
+chunkhound config template tei
+chunkhound config template bge-in-icl
+chunkhound config template multi
 
-# Save to file
-chunkhound config template --type local --output .chunkhound/config.yaml
+# Save to file (⚠️ Under Development)
+chunkhound config template basic --output .chunkhound/config.yaml
 ```
 
 Available template types:
 - **basic**: Simple OpenAI configuration
-- **local**: Local embedding servers (TEI, Ollama)
-- **advanced**: Multi-server setup with load balancing
-- **production**: Enterprise deployment configuration
+- **openai**: OpenAI API configuration
+- **tei**: Text Embeddings Inference server
+- **bge-in-icl**: BGE In-Context Learning setup
+- **multi**: Multi-server configuration
+
+⚠️ **Note**: Template generation is currently under development. Use `chunkhound config list` to see existing configurations.
 
 ## Common Workflows
 
@@ -387,12 +403,12 @@ docker run -p 8080:80 -v $PWD/data:/data \
   --model-id sentence-transformers/all-MiniLM-L6-v2
 ```
 
-2. **Generate local configuration:**
+2. **Generate local configuration (⚠️ Under Development):**
 ```bash
-chunkhound config template --type local --output .chunkhound/config.yaml
+chunkhound config template tei --output .chunkhound/config.yaml
 ```
 
-3. **Test the setup:**
+3. **Test the setup (⚠️ Under Development):**
 ```bash
 chunkhound config test local-tei
 ```
@@ -404,46 +420,64 @@ chunkhound run . --watch
 
 ### Production Deployment
 
+⚠️ **Status**: Configuration system under development. For production use, set environment variables directly:
+
+```bash
+# Set OpenAI API key for semantic search
+export OPENAI_API_KEY="your-api-key-here"
+
+# Start production indexing
+chunkhound run /path/to/codebase --watch
+
+# Start MCP server for AI assistant integration
+chunkhound mcp --verbose
+```
+
+**Advanced Configuration (⚠️ Under Development):**
+
 1. **Create production config:**
 ```bash
-chunkhound config template --type production --output production-config.yaml
+chunkhound config template multi --output production-config.yaml
 ```
 
-2. **Customize for your environment:**
-```bash
-# Edit the file to add your server URLs and API keys
-```
-
-3. **Validate configuration:**
+2. **Validate configuration:**
 ```bash
 chunkhound config validate --config production-config.yaml
 ```
 
-4. **Test all servers:**
+3. **Test all servers:**
 ```bash
 chunkhound config batch-test --config production-config.yaml
 ```
 
-5. **Benchmark performance:**
-```bash
-chunkhound config benchmark --config production-config.yaml
-```
-
 ### Switching Between Environments
 
+⚠️ **Status**: Under Development
+
 ```bash
-# Development (local)
+# Development (local) (⚠️ Under Development)
 chunkhound config switch dev-local
 
-# Staging
+# Staging (⚠️ Under Development)
 chunkhound config switch staging-cluster
 
-# Production
+# Production (⚠️ Under Development)
 chunkhound config switch production-cluster
 
-# Emergency fallback
+# Emergency fallback (⚠️ Under Development)
 chunkhound config enable emergency-fallback
 chunkhound config switch emergency-fallback
+```
+
+**Current Workaround**: Use environment variables to switch between configurations:
+```bash
+# Development
+export OPENAI_API_KEY="dev-key"
+chunkhound run . --watch
+
+# Production
+export OPENAI_API_KEY="prod-key"
+chunkhound run /prod/code --watch
 ```
 
 ### Health Monitoring
