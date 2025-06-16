@@ -91,9 +91,8 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
 
     def _should_process_file(self, file_path: Path) -> bool:
         """Check if file should be processed based on extension and patterns."""
-        if not file_path.is_file():
-            return False
-
+        # For deleted files, we can't check is_file() since they no longer exist
+        # Just check the extension pattern
         suffix = file_path.suffix.lower()
         return suffix in self.include_patterns
 
@@ -110,11 +109,17 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
 
     def _queue_event(self, path: Path, event_type: str, old_path: Optional[Path] = None):
         """Queue a file change event if it passes filters and debouncing."""
+        # For deletion events, always check extension pattern
+        # For other events, also verify file exists
+        if event_type != 'deleted' and not path.is_file():
+            return
+
         if not self._should_process_file(path):
             return
 
         path_str = str(path)
-        if not self._debounce_event(path_str):
+        # Exempt deletion events from debounce to ensure immediate processing
+        if event_type != 'deleted' and not self._debounce_event(path_str):
             return
 
         event_timestamp = time.time()
