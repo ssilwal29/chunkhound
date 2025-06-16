@@ -24,6 +24,8 @@ logging.disable(logging.CRITICAL)
 for logger_name in ['', 'mcp', 'server', 'fastmcp']:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL + 1)
 
+
+
 # Disable loguru logger used by database module
 try:
     from loguru import logger as loguru_logger
@@ -143,6 +145,8 @@ async def process_file_change(file_path: Path, event_type: str):
     It runs in the main thread to ensure single-threaded database access.
     """
     global _database, _embedding_manager
+
+
 
     if not _database:
         return
