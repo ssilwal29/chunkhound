@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 import logging
 
+# Set up logger
+logger = logging.getLogger(__name__)
+
 # Protocol for event handlers
 class EventHandlerProtocol(Protocol):
     def on_modified(self, event: Any) -> None: ...
@@ -364,25 +367,36 @@ async def process_file_change_queue(
         process_callback: Async function to call for each file change
         max_batch_size: Maximum number of events to process in one batch
     """
+    logger.info(f"🔄 process_file_change_queue called - queue size: {event_queue.qsize()}")
+    print(f"DEBUG: process_file_change_queue called - queue size: {event_queue.qsize()}")
     batch = []
 
     try:
+        logger.info(f"📥 Starting event collection from queue...")
         # Collect events up to batch size or until queue is empty
         while len(batch) < max_batch_size:
             try:
                 event = event_queue.get_nowait()
                 batch.append(event)
+                logger.info(f"📥 Collected event {len(batch)}: {event.event_type} - {event.path}")
             except asyncio.QueueEmpty:
+                logger.info(f"📥 Queue empty after collecting {len(batch)} events")
+                break
+            except Exception as e:
+                logger.error(f"❌ Error collecting event from queue: {e}")
                 break
 
         # Process collected events
         for event in batch:
             try:
+                logger.info(f"Processing file change: {event.event_type} - {event.path}")
                 await process_callback(event.path, event.event_type)
-            except Exception:
+                logger.info(f"Successfully processed: {event.event_type} - {event.path}")
+            except Exception as e:
                 # Log error but continue processing other events
-                # (In production, might want to send to error monitoring)
-                pass
+                logger.error(f"Failed to process file change: {event.event_type} - {event.path}: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
             finally:
                 event_queue.task_done()
 
@@ -474,18 +488,38 @@ class FileWatcherManager:
     async def _queue_processing_loop(self,
                                    process_callback: Callable[[Path, str], Awaitable[None]]):
         """Background task to process file change events."""
+        logger.info("🔄 Queue processing loop started")
+        print("DEBUG: Queue processing loop started")
+        loop_count = 0
+
         while True:
             try:
                 # Wait for events and process them in batches
                 await asyncio.sleep(1.0)  # Process every second
+                loop_count += 1
+                print(f"DEBUG: Loop iteration {loop_count}")
+
+                if loop_count % 30 == 0:  # Log every 30 seconds
+                    queue_size = self.event_queue.qsize() if self.event_queue else 0
+                    logger.info(f"🔄 Queue processing loop active - queue size: {queue_size}")
+                    print(f"DEBUG: Loop active - queue size: {queue_size}")
 
                 if self.event_queue and not self.event_queue.empty():
+                    queue_size = self.event_queue.qsize()
+                    logger.info(f"📋 Processing queue with {queue_size} events")
+                    print(f"DEBUG: Processing queue with {queue_size} events")
                     await process_file_change_queue(self.event_queue, process_callback)
+                    logger.info(f"✅ Queue processing batch completed")
+                    print(f"DEBUG: Queue processing batch completed")
 
             except asyncio.CancelledError:
+                logger.info("🛑 Queue processing loop cancelled")
+                print("DEBUG: Queue processing loop cancelled")
                 break
-            except Exception:
+            except Exception as e:
                 # Continue processing even if individual batches fail
+                logger.error(f"❌ Queue processing loop error: {e}")
+                print(f"DEBUG: Queue processing loop error: {e}")
                 await asyncio.sleep(5.0)  # Back off on errors
 
     async def cleanup(self):
