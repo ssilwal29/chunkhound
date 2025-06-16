@@ -90,6 +90,10 @@ class IndexingCoordinator(BaseService):
             '.jsx': Language.JSX,
             '.md': Language.MARKDOWN,
             '.markdown': Language.MARKDOWN,
+            '.json': Language.JSON,
+            '.yaml': Language.YAML,
+            '.yml': Language.YAML,
+            '.txt': Language.TEXT,
         }
 
         return language_map.get(suffix)
