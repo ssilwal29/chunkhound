@@ -315,6 +315,7 @@ def get_watch_paths_from_env() -> List[Path]:
     paths_env = os.environ.get('CHUNKHOUND_WATCH_PATHS', '')
 
     if paths_env:
+        logging.info(f"FileWatcher: Using CHUNKHOUND_WATCH_PATHS environment variable: {paths_env}")
         # Parse comma-separated paths
         path_strings = [p.strip() for p in paths_env.split(',') if p.strip()]
         paths = []
@@ -324,13 +325,23 @@ def get_watch_paths_from_env() -> List[Path]:
                 path = Path(path_str).resolve()
                 if path.exists() and path.is_dir():
                     paths.append(path)
-            except Exception:
+                    logging.info(f"FileWatcher: Added watch path: {path}")
+                else:
+                    logging.warning(f"FileWatcher: Skipping invalid watch path: {path_str}")
+            except Exception as e:
+                logging.warning(f"FileWatcher: Failed to resolve watch path '{path_str}': {e}")
                 continue
 
-        return paths if paths else [Path.cwd()]
+        if paths:
+            return paths
+        else:
+            logging.warning("FileWatcher: No valid paths from CHUNKHOUND_WATCH_PATHS, falling back to current directory")
+            return [Path.cwd()]
 
     # Default to current working directory
-    return [Path.cwd()]
+    current_dir = Path.cwd()
+    logging.info(f"FileWatcher: No CHUNKHOUND_WATCH_PATHS set, defaulting to current directory: {current_dir}")
+    return [current_dir]
 
 
 def is_filesystem_watching_enabled() -> bool:
@@ -417,7 +428,13 @@ class FileWatcherManager:
 
         self.watch_paths = watch_paths or get_watch_paths_from_env()
         if not self.watch_paths:
+            logging.error("FileWatcherManager: No watch paths configured - filesystem monitoring disabled")
             return False
+
+        # Log the watch paths being monitored
+        logging.info(f"FileWatcherManager: Initializing filesystem monitoring for {len(self.watch_paths)} paths:")
+        for i, path in enumerate(self.watch_paths):
+            logging.info(f"  [{i+1}] {path}")
 
         try:
             # Create event queue
@@ -449,7 +466,8 @@ class FileWatcherManager:
 
             return True
 
-        except Exception:
+        except Exception as e:
+            logging.error(f"FileWatcherManager: Failed to initialize filesystem monitoring: {e}")
             await self.cleanup()
             return False
 
