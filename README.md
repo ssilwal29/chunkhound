@@ -2,20 +2,20 @@
 
 **Semantic and Regex search for your projects via MCP.**
 
-Semantic and Regex search for your projects via MCP.Built end‑to‑end by a language model, from the project name to the last line of code.
+*Built completely by a language model with human supervision.*
 
 # How ChunkHound Was Born
 
-In May 2025 a single LLM, steered only by carefully crafted prompts, bootstrapped the entire ChunkHound code‑base in two weeks:
-- **Persistent memory** — the agent wrote to its own knowledge store after every step so future calls could pick up where it left off.
+In May 2025 an LLM coding agent assembled the first working version of ChunkHound in about two weeks. Development ran through a repeatable set of prompt‑"stations":
+- **Persistent memory** — each step wrote notes for the next.
 
-- **Pipeline of “stations”** — development was treated like a factory line. Each template prompt (“design”, “code”, “test”, “review”, …) did one job and handed the artefact to the next, with a human only reviewing and giving a thumbs‑up.
+- **Pipeline of “stations”** — design → code → test → review → commit, one or more prompts per task.
 
-- **Self‑indexing feedback loop** — as soon as minimal indexing worked the agent pointed ChunkHound at its own repo, letting it search, reason about and refactor its code faster on every pass.
+- **Self‑indexing feedback loop** — once basic indexing worked, the agent queried its own repo using ChunkHound and refined the code.
 
-- **Autonomous QA via [MCP](https://modelcontextprotocol.io)** – once the code was searchable through MCP, the agent ran scripted queries against its own API, spotting and fixing issues without human help.
+- **Autonomous QA via [MCP](https://modelcontextprotocol.io)** — scripted searches exercised the API and revealed bugs.
 
-The result is the tool you are reading about — and the README you are reading now — all produced without a human writing a single character by hand.
+All code and docs, including this README, were generated this way; the human role was limited to approval, review and steering the project in the right direction.
 
 ## Quick Start
 
