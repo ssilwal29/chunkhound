@@ -13,7 +13,7 @@ In May 2025 a single LLM, steered only by carefully crafted prompts, bootstrap
 
 - **Self‑indexing feedback loop** — as soon as minimal indexing worked the agent pointed ChunkHound at its own repo, letting it search, reason about and refactor its code faster on every pass.
 
-- **Autonomous QA via MCP** — once the code was searchable through MCP, the agent ran scripted queries against its own API, spotting and fixing issues without human help.
+- **Autonomous QA via [MCP](https://modelcontextprotocol.io)** – once the code was searchable through MCP, the agent ran scripted queries against its own API, spotting and fixing issues without human help.
 
 The result is the tool you are reading about — and the README you are reading now — all produced without a human writing a single character by hand.
 
