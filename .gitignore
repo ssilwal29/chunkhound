@@ -241,3 +241,4 @@ chunkhound-cli-dist/
 # CLI wrapper scripts (generated)
 chunkhound-cli
 chunkhound-cli-fast
+debug_test_file.py
