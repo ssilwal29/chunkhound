@@ -30,20 +30,18 @@ def main():
     """Set up environment and launch MCP server."""
     # Parse arguments
     args = parse_arguments()
-    
+
     # Set required environment variables
     os.environ["CHUNKHOUND_MCP_MODE"] = "1"
     os.environ["CHUNKHOUND_DB_PATH"] = args.db
-    
+
     # Import and run the MCP entry point
     try:
         from chunkhound.mcp_entry import main_sync
         main_sync()
     except ImportError:
-        print("Error: Could not import chunkhound.mcp_entry", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        print(f"Error starting MCP server: {e}", file=sys.stderr)
         sys.exit(1)
 
 

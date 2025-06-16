@@ -8,9 +8,6 @@ import os
 import json
 import asyncio
 import logging
-import sys
-from io import StringIO
-
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union, Tuple
 from contextlib import asynccontextmanager
@@ -20,7 +17,6 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.lowlevel import NotificationOptions
 from mcp.server.models import InitializationOptions
-from pydantic import ValidationError
 
 
 # Disable all logging for MCP server to prevent interference with JSON-RPC
@@ -82,25 +78,16 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
         db_path = Path(os.environ.get("CHUNKHOUND_DB_PATH", Path.home() / ".cache" / "chunkhound" / "chunks.duckdb"))
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f"DEBUG: Initializing database at {db_path}")
         _database = Database(db_path)
         try:
             _database.connect()
-            print("DEBUG: Database connected successfully")
-        except Exception as db_exc:
-            print(f"DEBUG ERROR: Database connection failed: {db_exc}")
-            print(f"DEBUG ERROR: Exception type: {type(db_exc).__name__}")
-            import traceback
-            print(f"DEBUG ERROR: Traceback: {traceback.format_exc()}")
+        except Exception:
             raise
 
         # Setup signal coordination for process coordination
-        print("DEBUG: Setting up signal coordination")
         setup_signal_coordination(db_path, _database)
-        print("DEBUG: Signal coordination setup complete")
 
         # Initialize embedding manager
-        print("DEBUG: Initializing embedding manager")
         _embedding_manager = EmbeddingManager()
 
         # Try to register OpenAI provider as default (optional)
@@ -111,32 +98,21 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 from embeddings import create_openai_provider
             openai_provider = create_openai_provider()
             _embedding_manager.register_provider(openai_provider, set_default=True)
-            print("DEBUG: OpenAI provider registered successfully")
-        except Exception as emb_exc:
-            print(f"DEBUG: OpenAI provider registration failed: {emb_exc}")
+        except Exception:
             # Silently fail - MCP server will run without semantic search capabilities
             pass
 
         # Initialize filesystem watcher with offline catch-up
-        print("DEBUG: Initializing file watcher")
         _file_watcher = FileWatcherManager()
         try:
             await _file_watcher.initialize(process_file_change)
-            print("DEBUG: File watcher initialized successfully")
-        except Exception as fw_exc:
-            print(f"DEBUG: File watcher initialization failed: {fw_exc}")
+        except Exception:
             # Silently fail - MCP server will run without filesystem watching
             pass
 
-        print("DEBUG: All initialization complete, yielding context")
         yield {"db": _database, "embeddings": _embedding_manager, "watcher": _file_watcher}
-        print("DEBUG: Context yielded successfully")
 
     except Exception as e:
-        print(f"DEBUG CRITICAL ERROR: Initialization failed: {e}")
-        print(f"DEBUG CRITICAL ERROR: Exception type: {type(e).__name__}")
-        import traceback
-        print(f"DEBUG CRITICAL ERROR: Traceback: {traceback.format_exc()}")
         raise Exception(f"Failed to initialize database and embeddings: {e}")
     finally:
         # Cleanup coordination files
@@ -171,54 +147,18 @@ async def process_file_change(file_path: Path, event_type: str):
     if not _database:
         return
 
-    processing_start = time.time()
     try:
-        logger.debug(f"TIMING: Processing started at {processing_start:.6f} - {event_type} {file_path}")
-
         if event_type == 'deleted':
             # Remove file from database with cleanup tracking
-            delete_start = time.time()
-            logger.debug(f"TIMING: Delete operation started at {delete_start:.6f} - {file_path}")
-            result = _database.delete_file_completely(str(file_path))
-            delete_end = time.time()
-            logger.debug(f"TIMING: Delete completed at {delete_end:.6f} (took {delete_end - delete_start:.6f}s) - {file_path}")
-            logger.debug(f"File deletion result: {result}")
+            _database.delete_file_completely(str(file_path))
         else:
             # Process file (created, modified, moved)
             if file_path.exists() and file_path.is_file():
-                # Get file stats for debugging
-                try:
-                    file_stat = file_path.stat()
-                    current_mtime = file_stat.st_mtime
-                    size_bytes = file_stat.st_size
-                    logger.debug(f"TIMING: File stats at {time.time():.6f} - {file_path} (mtime={current_mtime}, size={size_bytes} bytes)")
-
-                    # Check if file exists in database
-                    existing_file = _database.get_file_by_path(str(file_path))
-                    if existing_file:
-                        db_mtime = existing_file.get('mtime', 'unknown')
-                        logger.debug(f"TIMING: File exists in database - {file_path} (database mtime={db_mtime})")
-                        if isinstance(db_mtime, (int, float)) and isinstance(current_mtime, (int, float)):
-                            mtime_diff = current_mtime - db_mtime
-                            logger.debug(f"TIMING: Mtime difference: {mtime_diff:.6f}s (current={current_mtime:.6f}, db={db_mtime:.6f})")
-                    else:
-                        logger.debug(f"TIMING: New file, not in database yet - {file_path}")
-                except Exception as e:
-                    logger.debug(f"Error getting file stats: {e}")
-
                 # Use incremental processing for 10-100x performance improvement
-                process_start = time.time()
-                logger.debug(f"TIMING: Incremental processing started at {process_start:.6f} - {file_path}")
-                result = await _database.process_file_incremental(file_path=file_path)
-                process_end = time.time()
-                logger.debug(f"TIMING: Incremental processing completed at {process_end:.6f} (took {process_end - process_start:.6f}s) - {file_path}")
-                logger.debug(f"Incremental processing result: {result}")
-    except Exception as e:
-        # Log error but don't crash the MCP server
-        logger.error(f"Error processing file change {file_path} ({event_type}): {e}")
-    finally:
-        processing_end = time.time()
-        logger.debug(f"TIMING: Total processing time: {processing_end - processing_start:.6f}s - {event_type} {file_path}")
+                await _database.process_file_incremental(file_path=file_path)
+    except Exception:
+        # Silently handle errors to avoid crashing the MCP server
+        pass
 
 
 def convert_to_ndjson(results: List[Dict[str, Any]]) -> str:
@@ -419,15 +359,11 @@ def provide_mcp_example():
 async def handle_mcp_with_validation():
     """Handle MCP with improved error messages for protocol issues."""
     try:
-        print("DEBUG: Starting MCP server with validation")
         # Use the official MCP Python SDK stdio server pattern
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            print("DEBUG: Stdio server initialized, streams ready")
             # Initialize with lifespan context
-            print("DEBUG: Entering server_lifespan context")
             try:
                 async with server_lifespan(server) as _:
-                    print("DEBUG: Lifespan context active, server ready to run")
                     await server.run(
                         read_stream,
                         write_stream,
@@ -440,21 +376,11 @@ async def handle_mcp_with_validation():
                             ),
                         ),
                     )
-            except Exception as lifespan_error:
-                print(f"DEBUG CRITICAL ERROR: Error in lifespan: {lifespan_error}")
-                print(f"DEBUG CRITICAL ERROR: Lifespan error type: {type(lifespan_error).__name__}")
-                import traceback
-                print(f"DEBUG CRITICAL ERROR: Lifespan traceback: {traceback.format_exc()}")
+            except Exception:
                 raise
     except Exception as e:
         # Analyze error for common protocol issues with recursive search
-        error_str = str(e).lower()
         error_details = str(e)
-
-        print(f"DEBUG ERROR: MCP server error: {error_str}")
-        print(f"DEBUG ERROR: Error type: {type(e).__name__}")
-        import traceback
-        print(f"DEBUG ERROR: Full traceback: {traceback.format_exc()}")
 
         def find_validation_error(error, depth=0):
             """Recursively search for ValidationError in exception chain."""
