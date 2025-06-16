@@ -20,6 +20,19 @@ import logging
 # Set up logger
 logger = logging.getLogger(__name__)
 
+# Complete set of supported file extensions based on Language enum
+SUPPORTED_EXTENSIONS = {
+    '.py', '.pyw',           # Python
+    '.java',                 # Java
+    '.cs',                   # C#
+    '.ts', '.tsx',           # TypeScript
+    '.js', '.jsx',           # JavaScript
+    '.md', '.markdown',      # Markdown
+    '.json',                 # JSON
+    '.yaml', '.yml',         # YAML
+    '.txt',                  # Text
+}
+
 # Protocol for event handlers
 class EventHandlerProtocol(Protocol):
     def on_modified(self, event: Any) -> None: ...
@@ -72,7 +85,7 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
     def __init__(self, event_queue: asyncio.Queue, include_patterns: Optional[Set[str]] = None):
         super().__init__()
         self.event_queue = event_queue
-        self.include_patterns = include_patterns or {'.py', '.pyw', '.md', '.markdown'}
+        self.include_patterns = include_patterns or SUPPORTED_EXTENSIONS
         self.last_events: Dict[str, float] = {}
         self.debounce_delay = 2.0  # 2-second debounce
 
@@ -176,7 +189,7 @@ class FileWatcher:
 
         self.watch_paths = watch_paths
         self.event_queue = event_queue
-        self.include_patterns = include_patterns or {'.py', '.pyw', '.md', '.markdown'}
+        self.include_patterns = include_patterns or SUPPORTED_EXTENSIONS
 
         self.observer: Optional[Any] = None
         self.event_handler = ChunkHoundEventHandler(event_queue, include_patterns)
@@ -255,7 +268,7 @@ async def scan_for_offline_changes(
         List of FileChangeEvent objects for modified files
     """
     if include_patterns is None:
-        include_patterns = {'.py', '.pyw', '.md', '.markdown'}
+        include_patterns = SUPPORTED_EXTENSIONS
 
     offline_changes = []
     processed_count = 0
