@@ -236,7 +236,8 @@ class FileWatcher:
 async def scan_for_offline_changes(
     watch_paths: List[Path],
     last_scan_time: float,
-    include_patterns: Optional[Set[str]] = None
+    include_patterns: Optional[Set[str]] = None,
+    timeout: float = 5.0
 ) -> List[FileChangeEvent]:
     """
     Scan for files that changed while the server was offline.
@@ -245,6 +246,7 @@ async def scan_for_offline_changes(
         watch_paths: Paths to scan for changes
         last_scan_time: Timestamp of last scan (files modified after this will be included)
         include_patterns: File extensions to include
+        timeout: Maximum time to spend scanning (prevents MCP startup delays)
 
     Returns:
         List of FileChangeEvent objects for modified files
@@ -253,6 +255,8 @@ async def scan_for_offline_changes(
         include_patterns = {'.py', '.pyw', '.md', '.markdown'}
 
     offline_changes = []
+    processed_count = 0
+    scan_start_time = time.time()
 
     def should_process_file(file_path: Path) -> bool:
         """Check if file should be processed."""
@@ -268,6 +272,10 @@ async def scan_for_offline_changes(
         try:
             # Walk through all files in the directory
             for file_path in watch_path.rglob('*'):
+                # Check timeout to prevent excessive MCP startup delays
+                if time.time() - scan_start_time > timeout:
+                    break
+
                 if not should_process_file(file_path):
                     continue
 
@@ -280,6 +288,12 @@ async def scan_for_offline_changes(
                             event_type='modified',
                             timestamp=mtime
                         ))
+
+                    # Yield control to event loop every 50 files to prevent blocking
+                    processed_count += 1
+                    if processed_count % 50 == 0:
+                        await asyncio.sleep(0)
+
                 except (OSError, IOError):
                     # Skip files that can't be accessed
                     continue
@@ -409,10 +423,11 @@ class FileWatcherManager:
             # Create event queue
             self.event_queue = asyncio.Queue(maxsize=1000)
 
-            # Perform offline catch-up scan
+            # Perform offline catch-up scan with timeout to prevent MCP startup delays
             offline_changes = await scan_for_offline_changes(
                 self.watch_paths,
-                self.last_scan_time - 300  # 5 minutes buffer
+                self.last_scan_time - 300,  # 5 minutes buffer
+                timeout=3.0  # 3 second timeout to prevent IDE timeouts
             )
 
             # Queue offline changes for processing
