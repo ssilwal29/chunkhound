@@ -5,6 +5,7 @@ Provides code search capabilities via stdin/stdout JSON-RPC protocol
 """
 
 import os
+import sys
 import json
 import asyncio
 import logging
@@ -100,9 +101,14 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 from embeddings import create_openai_provider
             openai_provider = create_openai_provider()
             _embedding_manager.register_provider(openai_provider, set_default=True)
-        except Exception:
-            # Silently fail - MCP server will run without semantic search capabilities
-            pass
+        except ValueError as e:
+            # API key or configuration issue - log for debugging but continue
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"OpenAI provider setup failed: {e}", file=sys.stderr)
+        except Exception as e:
+            # Unexpected error - log for debugging but continue
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Unexpected error setting up OpenAI provider: {e}", file=sys.stderr)
 
         # Initialize filesystem watcher with offline catch-up
         _file_watcher = FileWatcherManager()
@@ -146,8 +152,6 @@ async def process_file_change(file_path: Path, event_type: str):
     """
     global _database, _embedding_manager
 
-
-
     if not _database:
         return
 
@@ -160,9 +164,12 @@ async def process_file_change(file_path: Path, event_type: str):
             if file_path.exists() and file_path.is_file():
                 # Use incremental processing for 10-100x performance improvement
                 await _database.process_file_incremental(file_path=file_path)
-    except Exception:
-        # Silently handle errors to avoid crashing the MCP server
-        pass
+    except Exception as e:
+        # Log the exception instead of silently handling it
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print(f"Exception during {event_type} processing: {e}", file=sys.stderr)
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
 
 
 def convert_to_ndjson(results: List[Dict[str, Any]]) -> str:
