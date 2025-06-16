@@ -28,6 +28,11 @@ if is_mcp_command():
     # Set database path environment variable
     os.environ["CHUNKHOUND_DB_PATH"] = str(db_path)
 
+    # Propagate OpenAI API key if available for semantic search
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if openai_api_key:
+        os.environ["OPENAI_API_KEY"] = openai_api_key
+
     # Launch MCP server directly via import (fixes PyInstaller sys.executable recursion bug)
     try:
         from chunkhound.mcp_entry import main_sync

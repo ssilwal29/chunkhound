@@ -41,7 +41,13 @@ async def main():
         from pathlib import Path
         db_path = str(Path.home() / ".cache" / "chunkhound" / "chunks.duckdb")
         os.environ["CHUNKHOUND_DB_PATH"] = db_path
-    
+
+    # Ensure OpenAI API key is available for semantic search
+    # This handles cases where the key might be set in parent process but not inherited
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if openai_api_key:
+        os.environ["OPENAI_API_KEY"] = openai_api_key
+
     # Now import and run the MCP server
     from chunkhound.mcp_server import main as run_mcp_server
     await run_mcp_server()
