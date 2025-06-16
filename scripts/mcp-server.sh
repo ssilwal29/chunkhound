@@ -16,6 +16,7 @@ DB_PATH="${CHUNKHOUND_DB_PATH:-$HOME/.cache/chunkhound/chunks.duckdb}"
 
 # Parse arguments
 ARGS=()
+VERBOSE=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --db)
@@ -24,6 +25,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --verbose|-v)
             ARGS+=("--verbose")
+            VERBOSE=1
             shift
             ;;
         -h|--help)
@@ -49,20 +51,22 @@ done
 # Ensure database directory exists
 mkdir -p "$(dirname "$DB_PATH")"
 
-# Check if database exists, suggest indexing if not
-if [[ ! -f "$DB_PATH" ]]; then
-    echo "Warning: Database not found at $DB_PATH"
-    echo "Run 'uv run chunkhound run .' to index the current directory first"
-    echo ""
+# Check if database exists, suggest indexing if not (only in verbose mode)
+if [[ ! -f "$DB_PATH" && $VERBOSE -eq 1 ]]; then
+    echo "Warning: Database not found at $DB_PATH" >&2
+    echo "Run 'uv run chunkhound run .' to index the current directory first" >&2
+    echo "" >&2
 fi
 
 # Export environment variables for the MCP server
 export CHUNKHOUND_DB_PATH="$DB_PATH"
 
-# Start MCP server using uv
-echo "Starting ChunkHound MCP server..."
-echo "Database: $DB_PATH"
-echo "Use Ctrl+C to stop"
-echo ""
+# Start MCP server using uv (suppress startup messages unless verbose)
+if [[ $VERBOSE -eq 1 ]]; then
+    echo "Starting ChunkHound MCP server..." >&2
+    echo "Database: $DB_PATH" >&2
+    echo "Use Ctrl+C to stop" >&2
+    echo "" >&2
+fi
 
 exec uv run chunkhound mcp --db "$DB_PATH" "${ARGS[@]}"
