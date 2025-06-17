@@ -18,11 +18,19 @@ def mcp_command(args: argparse.Namespace) -> None:
     mcp_launcher_path = Path(__file__).parent.parent.parent.parent.parent / "mcp_launcher.py"
     cmd = [sys.executable, str(mcp_launcher_path), "--db", str(args.db)]
 
+    # Inherit current environment and ensure critical variables are passed through
+    env = os.environ.copy()
+
+    # Explicitly ensure OpenAI API key is available if set in current environment
+    if "OPENAI_API_KEY" in os.environ:
+        env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
+
     process = subprocess.run(
         cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
-        stderr=subprocess.DEVNULL  # Suppress stderr to prevent MCP handshake interference
+        stderr=subprocess.DEVNULL,  # Suppress stderr to prevent MCP handshake interference
+        env=env  # Pass environment variables to subprocess
     )
 
     # Exit with the same code as the subprocess
