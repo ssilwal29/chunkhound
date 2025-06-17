@@ -7,6 +7,7 @@ import time
 
 import duckdb
 from loguru import logger
+import os
 
 from core.models import File, Chunk, Embedding
 from core.types import ChunkType, Language
@@ -69,7 +70,7 @@ class DuckDBProvider:
         return self.connection is not None
 
     def connect(self) -> None:
-        """Establish database connection and initialize schema."""
+        """Establish database connection and initialize schema with WAL validation."""
         logger.info(f"Connecting to DuckDB database: {self.db_path}")
 
         # Ensure parent directory exists for file-based databases
@@ -80,8 +81,8 @@ class DuckDBProvider:
             if duckdb is None:
                 raise ImportError("duckdb not available")
 
-            # Connect to DuckDB
-            self.connection = duckdb.connect(str(self.db_path))
+            # Connect to DuckDB with WAL corruption handling
+            self._connect_with_wal_validation()
             logger.info("DuckDB connection established")
 
             # Load required extensions
@@ -107,6 +108,64 @@ class DuckDBProvider:
         except Exception as e:
             logger.error(f"DuckDB connection failed: {e}")
             raise
+
+    def _connect_with_wal_validation(self) -> None:
+        """Connect to DuckDB with WAL corruption detection and automatic cleanup."""
+        try:
+            # Attempt initial connection
+            self.connection = duckdb.connect(str(self.db_path))
+            logger.debug("DuckDB connection successful")
+
+        except duckdb.Error as e:
+            error_msg = str(e)
+
+            # Check for WAL corruption patterns
+            if self._is_wal_corruption_error(error_msg):
+                logger.warning(f"WAL corruption detected: {error_msg}")
+                self._handle_wal_corruption()
+
+                # Retry connection after WAL cleanup
+                try:
+                    self.connection = duckdb.connect(str(self.db_path))
+                    logger.info("DuckDB connection successful after WAL cleanup")
+                except Exception as retry_error:
+                    logger.error(f"Connection failed even after WAL cleanup: {retry_error}")
+                    raise
+            else:
+                # Not a WAL corruption error, re-raise original exception
+                raise
+
+    def _is_wal_corruption_error(self, error_msg: str) -> bool:
+        """Check if error message indicates WAL corruption."""
+        corruption_indicators = [
+            "Failure while replaying WAL file",
+            "Catalog \"chunkhound\" does not exist",
+            "BinderException",
+            "Binder Error"
+        ]
+
+        return any(indicator in error_msg for indicator in corruption_indicators)
+
+    def _handle_wal_corruption(self) -> None:
+        """Handle WAL corruption by cleaning up corrupted WAL files."""
+        db_path = Path(self.db_path)
+        wal_file = db_path.with_suffix(db_path.suffix + '.wal')
+
+        if wal_file.exists():
+            try:
+                # Get file size for logging
+                file_size = wal_file.stat().st_size
+                logger.warning(f"Removing corrupted WAL file: {wal_file} ({file_size:,} bytes)")
+
+                # Remove corrupted WAL file
+                os.remove(wal_file)
+                logger.info(f"Corrupted WAL file removed successfully: {wal_file}")
+
+            except Exception as e:
+                logger.error(f"Failed to remove corrupted WAL file {wal_file}: {e}")
+                raise
+        else:
+            logger.warning(f"WAL corruption detected but no WAL file found at: {wal_file}")
 
     def disconnect(self) -> None:
         """Close database connection and cleanup resources."""
