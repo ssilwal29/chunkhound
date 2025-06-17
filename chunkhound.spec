@@ -17,7 +17,7 @@ chunkhound_root = project_root / "chunkhound"
 packages = [
     'chunkhound',
     'core',
-    'interfaces', 
+    'interfaces',
     'providers',
     'services',
     'registry'
@@ -47,7 +47,7 @@ try:
     import tree_sitter
     import tree_sitter_python
     import tree_sitter_markdown
-    
+
     # Find tree-sitter binary files
     ts_path = Path(tree_sitter.__file__).parent
     for so_file in ts_path.rglob('*.so'):
@@ -56,7 +56,7 @@ try:
         tree_sitter_datas.append((str(dylib_file), 'tree_sitter'))
     for dll_file in ts_path.rglob('*.dll'):
         tree_sitter_datas.append((str(dll_file), 'tree_sitter'))
-        
+
     # Add language-specific binaries
     for lang_module in [tree_sitter_python, tree_sitter_markdown]:
         lang_path = Path(lang_module.__file__).parent
@@ -66,7 +66,7 @@ try:
             tree_sitter_datas.append((str(dylib_file), f'tree_sitter_{lang_module.__name__.split("_")[-1]}'))
         for dll_file in lang_path.rglob('*.dll'):
             tree_sitter_datas.append((str(dll_file), f'tree_sitter_{lang_module.__name__.split("_")[-1]}'))
-            
+
 except ImportError:
     print("Warning: Could not import tree-sitter modules")
 
@@ -88,19 +88,36 @@ except ImportError:
 
 datas.extend(duckdb_datas)
 
+# Add tiktoken_ext data files (encoding data)
+tiktoken_ext_datas = []
+try:
+    import tiktoken_ext
+    for ext_path in tiktoken_ext.__path__:
+        ext_path = Path(ext_path)
+        if ext_path.exists():
+            for file_path in ext_path.rglob('*'):
+                if file_path.is_file() and not file_path.name.endswith('.pyc'):
+                    rel_path = file_path.relative_to(ext_path.parent)
+                    dest_dir = str(rel_path.parent)
+                    tiktoken_ext_datas.append((str(file_path), dest_dir))
+except ImportError:
+    print("Warning: Could not import tiktoken_ext")
+
+datas.extend(tiktoken_ext_datas)
+
 # Hidden imports that PyInstaller might miss
 hiddenimports = [
     # Core chunkhound modules
     'chunkhound.api.cli.main',
     'chunkhound.api.cli.commands.run',
-    'chunkhound.api.cli.commands.config', 
+    'chunkhound.api.cli.commands.config',
     'chunkhound.api.cli.parsers',
     'chunkhound.api.cli.parsers.run_parser',
     'chunkhound.api.cli.parsers.mcp_parser',
     'chunkhound.api.cli.parsers.config_parser',
     'chunkhound.api.cli.utils.validation',
     'chunkhound.mcp_entry',
-    
+
     # Core system modules
     'core.models',
     'core.models.chunk',
@@ -109,7 +126,7 @@ hiddenimports = [
     'interfaces.embedding',
     'interfaces.parser',
     'providers.embedding.openai_provider',
-    'providers.embedding.tei_provider', 
+    'providers.embedding.tei_provider',
     'providers.embedding.bge_in_icl_provider',
     'providers.parser.tree_sitter_provider',
     'services.embedding_service',
@@ -117,7 +134,7 @@ hiddenimports = [
     'services.indexing_service',
     'services.search_service',
     'registry.service_registry',
-    
+
     # Third-party hidden imports
     'tree_sitter',
     'tree_sitter.binding',
@@ -133,7 +150,7 @@ hiddenimports = [
     'aiohttp.connector',
     'pydantic',
     'pydantic.fields',
-    'pydantic.validators', 
+    'pydantic.validators',
     'click',
     'loguru',
     'mcp',
@@ -147,7 +164,9 @@ hiddenimports = [
     'yaml',
     'tiktoken',
     'tiktoken.core',
-    
+    'tiktoken_ext',
+    'tiktoken_ext.openai_public',
+
     # System modules that might be needed
     'asyncio',
     'concurrent.futures',
