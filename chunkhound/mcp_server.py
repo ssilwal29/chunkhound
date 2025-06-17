@@ -83,6 +83,7 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
 
         _database = Database(db_path)
         try:
+            # Initialize database with connection only - no background refresh thread
             _database.connect()
         except Exception:
             raise
@@ -196,6 +197,11 @@ async def call_tool(
         limit = max(1, min(arguments.get("limit", 10), 100))
 
         try:
+            # Check connection instead of forcing reconnection (fixes race condition)
+            if _database and not _database.is_connected():
+                logger.info("Database not connected, reconnecting before regex search")
+                _database.reconnect()
+
             results = _database.search_regex(pattern=pattern, limit=limit)
             return [types.TextContent(type="text", text=convert_to_ndjson(results))]
         except Exception as e:
@@ -212,6 +218,11 @@ async def call_tool(
             raise Exception("No embedding providers available. Set OPENAI_API_KEY to enable semantic search.")
 
         try:
+            # Check connection instead of forcing reconnection (fixes race condition)
+            if _database and not _database.is_connected():
+                logger.info("Database not connected, reconnecting before semantic search")
+                _database.reconnect()
+
             result = await _embedding_manager.embed_texts([query], provider)
             query_vector = result.embeddings[0]
 
