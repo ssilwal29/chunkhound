@@ -102,9 +102,9 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
             openai_provider = create_openai_provider()
             _embedding_manager.register_provider(openai_provider, set_default=True)
         except ValueError as e:
-            # API key or configuration issue - log for debugging but continue
-            if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"OpenAI provider setup failed: {e}", file=sys.stderr)
+            # API key or configuration issue - always inform user
+            print(f"OpenAI provider setup failed: {e}", file=sys.stderr)
+            print("Note: Semantic search will be unavailable. Set OPENAI_API_KEY environment variable to enable.", file=sys.stderr)
         except Exception as e:
             # Unexpected error - log for debugging but continue
             if "CHUNKHOUND_DEBUG" in os.environ:
