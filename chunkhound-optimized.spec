@@ -39,6 +39,9 @@ hiddenimports = [
     'openai',
     'pydantic',
     'click',
+    'tiktoken',
+    'tiktoken_ext',
+    'tiktoken_ext.openai_public',
     'loguru',
     'mcp',
     'mcp.server',
@@ -95,22 +98,35 @@ try:
 except ImportError:
     pass
 
-# Add tiktoken encoding data files for OpenAI semantic search
+# Add tiktoken_ext data files (encoding data)
+tiktoken_ext_datas = []
 try:
-    import tiktoken
-    tiktoken_path = Path(tiktoken.__file__).parent
-
-    # Include tiktoken encodings directory
-    encodings_path = tiktoken_path / 'encodings'
-    if encodings_path.exists():
-        for encoding_file in encodings_path.glob('*.json'):
-            datas.append((str(encoding_file), 'tiktoken/encodings'))
-        for encoding_file in encodings_path.glob('*.txt'):
-            datas.append((str(encoding_file), 'tiktoken/encodings'))
-        for encoding_file in encodings_path.glob('*.tiktoken'):
-            datas.append((str(encoding_file), 'tiktoken/encodings'))
+    import tiktoken_ext
+    for ext_path in tiktoken_ext.__path__:
+        ext_path = Path(ext_path)
+        if ext_path.exists():
+            for file_path in ext_path.rglob('*'):
+                if file_path.is_file() and not file_path.name.endswith('.pyc'):
+                    rel_path = file_path.relative_to(ext_path)
+                    dest_dir = f"tiktoken_ext/{rel_path.parent}" if rel_path.parent != Path('.') else "tiktoken_ext"
+                    tiktoken_ext_datas.append((str(file_path), dest_dir))
 except ImportError:
-    pass
+    print("Warning: Could not import tiktoken_ext")
+
+# Add tiktoken cached encoding data files
+try:
+    import tempfile
+    import os
+    cache_dir = os.path.join(tempfile.gettempdir(), "data-gym-cache")
+    if os.path.exists(cache_dir):
+        for cache_file in os.listdir(cache_dir):
+            cache_path = os.path.join(cache_dir, cache_file)
+            if os.path.isfile(cache_path):
+                tiktoken_ext_datas.append((cache_path, "data-gym-cache"))
+except Exception as e:
+    print(f"Warning: Could not add tiktoken cache files: {e}")
+
+datas.extend(tiktoken_ext_datas)
 
 # Aggressive exclusions to reduce size and startup time
 excludes = [

@@ -97,11 +97,24 @@ try:
         if ext_path.exists():
             for file_path in ext_path.rglob('*'):
                 if file_path.is_file() and not file_path.name.endswith('.pyc'):
-                    rel_path = file_path.relative_to(ext_path.parent)
-                    dest_dir = str(rel_path.parent)
+                    rel_path = file_path.relative_to(ext_path)
+                    dest_dir = f"tiktoken_ext/{rel_path.parent}" if rel_path.parent != Path('.') else "tiktoken_ext"
                     tiktoken_ext_datas.append((str(file_path), dest_dir))
 except ImportError:
     print("Warning: Could not import tiktoken_ext")
+
+# Add tiktoken cached encoding data files
+try:
+    import tempfile
+    import os
+    cache_dir = os.path.join(tempfile.gettempdir(), "data-gym-cache")
+    if os.path.exists(cache_dir):
+        for cache_file in os.listdir(cache_dir):
+            cache_path = os.path.join(cache_dir, cache_file)
+            if os.path.isfile(cache_path):
+                tiktoken_ext_datas.append((cache_path, "data-gym-cache"))
+except Exception as e:
+    print(f"Warning: Could not add tiktoken cache files: {e}")
 
 datas.extend(tiktoken_ext_datas)
 
@@ -141,6 +154,9 @@ hiddenimports = [
     'tree_sitter_python',
     'tree_sitter_markdown',
     'tree_sitter_language_pack',
+    'tiktoken',
+    'tiktoken_ext',
+    'tiktoken_ext.openai_public',
     'duckdb',
     'openai',
     'openai.types',
