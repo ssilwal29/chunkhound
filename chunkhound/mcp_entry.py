@@ -14,13 +14,9 @@ logging.disable(logging.CRITICAL)
 for logger_name in ['', 'mcp', 'server', 'fastmcp', 'registry', 'chunkhound']:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL + 1)
 
-# Redirect stderr to /dev/null to suppress all output during MCP mode
-if os.name != 'nt':  # Unix-like systems
-    devnull = open(os.devnull, 'w')
-    sys.stderr = devnull
-else:  # Windows
-    devnull = open('nul', 'w')
-    sys.stderr = devnull
+# Note: Do NOT redirect stderr to /dev/null as it breaks MCP SDK's internal error handling
+# The MCP SDK requires stderr for proper TaskGroup error handling
+# Instead, rely on logging.disable() and loguru suppression for clean JSON-RPC output
 
 # Set environment variable to signal MCP mode
 os.environ["CHUNKHOUND_MCP_MODE"] = "1"

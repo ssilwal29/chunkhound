@@ -29,7 +29,7 @@ def mcp_command(args: argparse.Namespace) -> None:
         cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
-        stderr=subprocess.DEVNULL,  # Suppress stderr to prevent MCP handshake interference
+        stderr=sys.stderr,  # Allow stderr for MCP SDK internal error handling
         env=env  # Pass environment variables to subprocess
     )
 
