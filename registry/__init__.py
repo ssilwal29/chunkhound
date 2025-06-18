@@ -205,14 +205,16 @@ class ProviderRegistry:
         except ValueError:
             logger.warning("No embedding provider configured for embedding service")
 
-        # Get batch configuration from config
-        batch_size = self._config.get('embedding', {}).get('batch_size', 50)
+        # Get unified batch configuration from config
+        embedding_batch_size = self._config.get('embedding', {}).get('batch_size', 100)
+        db_batch_size = self._config.get('database', {}).get('batch_size', 500)
         max_concurrent = self._config.get('embedding', {}).get('max_concurrent_batches', 3)
 
         return EmbeddingService(
             database_provider=database_provider,
             embedding_provider=embedding_provider,
-            batch_size=batch_size,
+            embedding_batch_size=embedding_batch_size,
+            db_batch_size=db_batch_size,
             max_concurrent_batches=max_concurrent
         )
 
