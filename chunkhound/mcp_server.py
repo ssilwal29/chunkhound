@@ -40,12 +40,14 @@ try:
     from .embeddings import EmbeddingManager
     from .signal_coordinator import SignalCoordinator
     from .file_watcher import FileWatcherManager
+    from .core.config import EmbeddingConfig, EmbeddingProviderFactory
 except ImportError:
     # Handle running as standalone script
     from database import Database
     from embeddings import EmbeddingManager
     from signal_coordinator import SignalCoordinator
     from file_watcher import FileWatcherManager
+    from core.config import EmbeddingConfig, EmbeddingProviderFactory
 
 # Global database, embedding manager, and file watcher instances
 # Global state management
@@ -130,27 +132,41 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
         if "CHUNKHOUND_DEBUG" in os.environ:
             print("Server lifespan: Embedding manager initialized", file=sys.stderr)
 
-        # Try to register OpenAI provider as default (optional)
+        # Try to register embedding provider using unified configuration (optional)
         try:
-            try:
-                from .embeddings import create_openai_provider
-            except ImportError:
-                from embeddings import create_openai_provider
-            openai_provider = create_openai_provider()
-            _embedding_manager.register_provider(openai_provider, set_default=True)
+            # Load configuration with environment variable support
+            config = EmbeddingConfig()
+
+            # Maintain backward compatibility with legacy OPENAI_API_KEY
+            legacy_api_key = os.environ.get('OPENAI_API_KEY')
+            if not config.api_key and legacy_api_key:
+                from pydantic import SecretStr
+                config.api_key = SecretStr(legacy_api_key)
+                if config.provider == 'openai' and "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Using legacy OPENAI_API_KEY for backward compatibility", file=sys.stderr)
+
+            # Create provider using unified factory
+            provider = EmbeddingProviderFactory.create_provider(config)
+            _embedding_manager.register_provider(provider, set_default=True)
+
             if "CHUNKHOUND_DEBUG" in os.environ:
-                print("Server lifespan: OpenAI provider registered successfully", file=sys.stderr)
+                print(f"Server lifespan: Embedding provider registered successfully: {config.provider} with model {config.model}", file=sys.stderr)
+
         except ValueError as e:
             # API key or configuration issue - only log in non-MCP mode
             if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"Server lifespan: OpenAI provider setup failed (expected): {e}", file=sys.stderr)
+                print(f"Server lifespan: Embedding provider setup failed (expected): {e}", file=sys.stderr)
             if "CHUNKHOUND_DEBUG" in os.environ and not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                print(f"OpenAI provider setup failed: {e}", file=sys.stderr)
-                print("Note: Semantic search will be unavailable. Set OPENAI_API_KEY environment variable to enable.", file=sys.stderr)
+                print(f"Embedding provider setup failed: {e}", file=sys.stderr)
+                print("Configuration help:", file=sys.stderr)
+                print("- Set CHUNKHOUND_EMBEDDING_PROVIDER (openai|openai-compatible|tei|bge-in-icl)", file=sys.stderr)
+                print("- Set CHUNKHOUND_EMBEDDING_API_KEY or legacy OPENAI_API_KEY", file=sys.stderr)
+                print("- Set CHUNKHOUND_EMBEDDING_MODEL (optional)", file=sys.stderr)
+                print("- For OpenAI-compatible: Set CHUNKHOUND_EMBEDDING_BASE_URL", file=sys.stderr)
         except Exception as e:
             # Unexpected error - log for debugging but continue
             if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"Server lifespan: Unexpected error setting up OpenAI provider: {e}", file=sys.stderr)
+                print(f"Server lifespan: Unexpected error setting up embedding provider: {e}", file=sys.stderr)
                 import traceback
                 traceback.print_exc(file=sys.stderr)
 
