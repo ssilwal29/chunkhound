@@ -71,28 +71,64 @@ def setup_signal_coordination(db_path: Path, database: Database):
         raise
 
 
+def log_environment_diagnostics():
+    """Log environment diagnostics for API key debugging - only in non-MCP mode."""
+    import os
+    # Skip diagnostics in MCP mode to maintain clean JSON-RPC communication
+    if os.environ.get("CHUNKHOUND_MCP_MODE"):
+        return
+    print("=== MCP SERVER ENVIRONMENT DIAGNOSTICS ===", file=sys.stderr)
+    print(f"OPENAI_API_KEY present: {'OPENAI_API_KEY' in os.environ}", file=sys.stderr)
+    if 'OPENAI_API_KEY' in os.environ:
+        key = os.environ['OPENAI_API_KEY']
+        print(f"OPENAI_API_KEY length: {len(key)}", file=sys.stderr)
+        print(f"OPENAI_API_KEY prefix: {key[:7]}...", file=sys.stderr)
+    else:
+        print("OPENAI_API_KEY not found in process environment", file=sys.stderr)
+    print("===============================================", file=sys.stderr)
+
+
 @asynccontextmanager
 async def server_lifespan(server: Server) -> AsyncIterator[dict]:
     """Manage server startup and shutdown lifecycle."""
     global _database, _embedding_manager, _file_watcher, _signal_coordinator
 
+    if "CHUNKHOUND_DEBUG" in os.environ:
+        print("Server lifespan: Starting initialization", file=sys.stderr)
+
     try:
+        # Log environment diagnostics for API key debugging
+        log_environment_diagnostics()
+
         # Initialize database path
         db_path = Path(os.environ.get("CHUNKHOUND_DB_PATH", Path.home() / ".cache" / "chunkhound" / "chunks.duckdb"))
         db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print(f"Server lifespan: Using database at {db_path}", file=sys.stderr)
 
         _database = Database(db_path)
         try:
             # Initialize database with connection only - no background refresh thread
             _database.connect()
-        except Exception:
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: Database connected successfully", file=sys.stderr)
+        except Exception as db_error:
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Server lifespan: Database connection error: {db_error}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
             raise
 
         # Setup signal coordination for process coordination
         setup_signal_coordination(db_path, _database)
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Server lifespan: Signal coordination setup complete", file=sys.stderr)
 
         # Initialize embedding manager
         _embedding_manager = EmbeddingManager()
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Server lifespan: Embedding manager initialized", file=sys.stderr)
 
         # Try to register OpenAI provider as default (optional)
         try:
@@ -102,46 +138,89 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 from embeddings import create_openai_provider
             openai_provider = create_openai_provider()
             _embedding_manager.register_provider(openai_provider, set_default=True)
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: OpenAI provider registered successfully", file=sys.stderr)
         except ValueError as e:
-            # API key or configuration issue - always inform user
-            print(f"OpenAI provider setup failed: {e}", file=sys.stderr)
-            print("Note: Semantic search will be unavailable. Set OPENAI_API_KEY environment variable to enable.", file=sys.stderr)
+            # API key or configuration issue - only log in non-MCP mode
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Server lifespan: OpenAI provider setup failed (expected): {e}", file=sys.stderr)
+            if "CHUNKHOUND_DEBUG" in os.environ and not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                print(f"OpenAI provider setup failed: {e}", file=sys.stderr)
+                print("Note: Semantic search will be unavailable. Set OPENAI_API_KEY environment variable to enable.", file=sys.stderr)
         except Exception as e:
             # Unexpected error - log for debugging but continue
             if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"Unexpected error setting up OpenAI provider: {e}", file=sys.stderr)
+                print(f"Server lifespan: Unexpected error setting up OpenAI provider: {e}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
 
         # Initialize filesystem watcher with offline catch-up
         _file_watcher = FileWatcherManager()
         try:
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: Initializing file watcher...", file=sys.stderr)
             await _file_watcher.initialize(process_file_change)
-        except Exception:
-            # Silently fail - MCP server will run without filesystem watching
-            pass
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: File watcher initialized successfully", file=sys.stderr)
+        except Exception as fw_error:
+            # Log failure but continue - MCP server will run without filesystem watching
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Server lifespan: File watcher initialization failed (non-critical): {fw_error}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
 
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Server lifespan: All components initialized successfully", file=sys.stderr)
+
+        # Return server context to the caller
         yield {"db": _database, "embeddings": _embedding_manager, "watcher": _file_watcher}
 
     except Exception as e:
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print(f"Server lifespan: Initialization failed: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
         raise Exception(f"Failed to initialize database and embeddings: {e}")
     finally:
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Server lifespan: Entering cleanup phase", file=sys.stderr)
+
         # Cleanup coordination files
         if _signal_coordinator:
-            _signal_coordinator.cleanup_coordination_files()
-            pass
+            try:
+                _signal_coordinator.cleanup_coordination_files()
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Signal coordination files cleaned up", file=sys.stderr)
+            except Exception as coord_error:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Server lifespan: Error cleaning up coordination files: {coord_error}", file=sys.stderr)
 
         # Cleanup filesystem watcher
         if _file_watcher:
             try:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Cleaning up file watcher...", file=sys.stderr)
                 await _file_watcher.cleanup()
-            except Exception:
-                pass
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: File watcher cleaned up successfully", file=sys.stderr)
+            except Exception as fw_cleanup_error:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Server lifespan: Error cleaning up file watcher: {fw_cleanup_error}", file=sys.stderr)
 
         # Cleanup database
         if _database:
             try:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Closing database connection...", file=sys.stderr)
                 _database.close()
-            except Exception:
-                pass
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Database connection closed successfully", file=sys.stderr)
+            except Exception as db_close_error:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Server lifespan: Error closing database: {db_close_error}", file=sys.stderr)
+
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Server lifespan: Cleanup complete", file=sys.stderr)
 
 
 async def process_file_change(file_path: Path, event_type: str):
@@ -199,7 +278,8 @@ async def call_tool(
         try:
             # Check connection instead of forcing reconnection (fixes race condition)
             if _database and not _database.is_connected():
-                logger.info("Database not connected, reconnecting before regex search")
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Database not connected, reconnecting before regex search", file=sys.stderr)
                 _database.reconnect()
 
             results = _database.search_regex(pattern=pattern, limit=limit)
@@ -220,7 +300,8 @@ async def call_tool(
         try:
             # Check connection instead of forcing reconnection (fixes race condition)
             if _database and not _database.is_connected():
-                logger.info("Database not connected, reconnecting before semantic search")
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Database not connected, reconnecting before semantic search", file=sys.stderr)
                 _database.reconnect()
 
             # Implement timeout coordination for MCP-OpenAI API latency mismatch
@@ -398,24 +479,65 @@ async def handle_mcp_with_validation():
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
             # Initialize with lifespan context
             try:
-                async with server_lifespan(server) as _:
-                    await server.run(
-                        read_stream,
-                        write_stream,
-                        InitializationOptions(
-                            server_name="ChunkHound Code Search",
-                            server_version="1.1.0",
-                            capabilities=server.get_capabilities(
-                                notification_options=NotificationOptions(),
-                                experimental_capabilities={},
+                # Debug output to help diagnose initialization issues
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("MCP server: Starting server initialization", file=sys.stderr)
+
+                async with server_lifespan(server) as server_context:
+                    # Initialize the server
+                    if "CHUNKHOUND_DEBUG" in os.environ:
+                        print("MCP server: Server lifespan established, running server...", file=sys.stderr)
+
+                    try:
+                        await server.run(
+                            read_stream,
+                            write_stream,
+                            InitializationOptions(
+                                server_name="ChunkHound Code Search",
+                                server_version="1.1.0",
+                                capabilities=server.get_capabilities(
+                                    notification_options=NotificationOptions(),
+                                    experimental_capabilities={},
+                                ),
                             ),
-                        ),
-                    )
-            except Exception:
+                        )
+
+                        if "CHUNKHOUND_DEBUG" in os.environ:
+                            print("MCP server: Server.run() completed, entering keepalive mode", file=sys.stderr)
+
+                        # Keep the process alive until client disconnects
+                        # The MCP SDK handles the connection lifecycle, so we just need to wait
+                        # for the server to be terminated by the client or signal
+                        try:
+                            # Wait indefinitely - the MCP SDK will handle cleanup when client disconnects
+                            await asyncio.Event().wait()
+                        except (asyncio.CancelledError, KeyboardInterrupt):
+                            if "CHUNKHOUND_DEBUG" in os.environ:
+                                print("MCP server: Received shutdown signal", file=sys.stderr)
+                        except Exception as e:
+                            if "CHUNKHOUND_DEBUG" in os.environ:
+                                print(f"MCP server unexpected error: {e}", file=sys.stderr)
+                                import traceback
+                                traceback.print_exc(file=sys.stderr)
+                    except Exception as server_run_error:
+                        if "CHUNKHOUND_DEBUG" in os.environ:
+                            print(f"MCP server.run() error: {server_run_error}", file=sys.stderr)
+                            import traceback
+                            traceback.print_exc(file=sys.stderr)
+                        raise
+            except Exception as lifespan_error:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"MCP server lifespan error: {lifespan_error}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
                 raise
     except Exception as e:
         # Analyze error for common protocol issues with recursive search
         error_details = str(e)
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print(f"MCP server top-level error: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
 
         def find_validation_error(error, depth=0):
             """Recursively search for ValidationError in exception chain."""
