@@ -1113,10 +1113,10 @@ class DuckDBProvider:
             logger.error(f"Failed to insert embedding: {e}")
             raise
 
-    def insert_embeddings_batch(self, embeddings_data: List[Dict]) -> int:
+    def insert_embeddings_batch(self, embeddings_data: List[Dict], batch_size: Optional[int] = None) -> int:
         """Insert multiple embedding vectors with HNSW index optimization.
 
-        For large batches (>50 items), uses the Context7-recommended optimization:
+        For large batches (>= batch_size threshold), uses the Context7-recommended optimization:
         1. Drop HNSW indexes to avoid insert slowdown (60s+ -> 5s for 300 items)
         2. Use fast INSERT for new embeddings, INSERT OR REPLACE for updates
         3. Recreate HNSW indexes after bulk operations
@@ -1125,6 +1125,7 @@ class DuckDBProvider:
 
         Args:
             embeddings_data: List of dicts with keys: chunk_id, provider, model, embedding, dims
+            batch_size: Threshold for HNSW optimization (default: 50)
 
         Returns:
             Number of successfully inserted embeddings
@@ -1135,8 +1136,10 @@ class DuckDBProvider:
         if not embeddings_data:
             return 0
 
-        batch_size = len(embeddings_data)
-        logger.debug(f"🔄 Starting optimized batch insert of {batch_size} embeddings")
+        # Use provided batch_size threshold or default to 50
+        hnsw_threshold = batch_size if batch_size is not None else 50
+        actual_batch_size = len(embeddings_data)
+        logger.debug(f"🔄 Starting optimized batch insert of {actual_batch_size} embeddings (HNSW threshold: {hnsw_threshold})")
 
         # Auto-detect embedding dimensions from first embedding
         first_vector = embeddings_data[0]['embedding']
@@ -1159,7 +1162,7 @@ class DuckDBProvider:
         model = first_embedding['model']
 
         # Use HNSW index optimization for larger batches (Context7 research shows 10-20x improvement)
-        use_hnsw_optimization = batch_size >= 50
+        use_hnsw_optimization = actual_batch_size >= hnsw_threshold
 
         try:
             total_inserted = 0
@@ -1167,7 +1170,7 @@ class DuckDBProvider:
 
             if use_hnsw_optimization:
                 # CRITICAL OPTIMIZATION: Drop HNSW indexes for bulk operations (Context7 best practice)
-                logger.debug(f"🔧 Large batch detected ({batch_size} embeddings), applying HNSW optimization")
+                logger.debug(f"🔧 Large batch detected ({actual_batch_size} embeddings >= {hnsw_threshold}), applying HNSW optimization")
 
                 # Extract dims for index management
                 dims = first_embedding['dims']
@@ -1282,7 +1285,7 @@ class DuckDBProvider:
 
             else:
                 # Small batch: use VALUES approach for consistency
-                logger.debug(f"📝 Small batch: using VALUES INSERT OR REPLACE for {batch_size} embeddings")
+                logger.debug(f"📝 Small batch: using VALUES INSERT OR REPLACE for {actual_batch_size} embeddings (< {hnsw_threshold} threshold)")
 
                 small_start = time.time()
 

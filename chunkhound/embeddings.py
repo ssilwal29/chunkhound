@@ -940,7 +940,11 @@ class BGEInICLProvider:
         self._enable_icl = enable_icl
         self._adaptive_batching = adaptive_batching
         self._min_batch_size = min_batch_size
-        self._max_batch_size = max_batch_size
+
+        # UNIFIED BATCHING SYSTEM: Respect user-configured batch_size as maximum
+        # If user specified a batch_size, use it as the max_batch_size to ensure
+        # adaptive batching never exceeds the user's intended limit
+        self._max_batch_size = min(max_batch_size, batch_size)
 
         # Initialize context manager with similarity scoring
         self._context_manager = ICLContextManager(cache_size=context_cache_size)
@@ -956,6 +960,13 @@ class BGEInICLProvider:
 
         logger.info(f"BGE-IN-ICL provider initialized: {self._model} (base_url: {self._base_url}, "
                    f"ICL: {self._enable_icl}, adaptive_batching: {self._adaptive_batching})")
+
+        if self._adaptive_batching:
+            logger.info(f"BGE-IN-ICL adaptive batching: batch_size={self._batch_size}, "
+                       f"min={self._min_batch_size}, max={self._max_batch_size}")
+            if self._max_batch_size < max_batch_size:
+                logger.info(f"BGE-IN-ICL respecting user batch limit: {self._max_batch_size} "
+                           f"(user-configured) vs {max_batch_size} (default)")
 
     @property
     def name(self) -> str:
@@ -1236,6 +1247,7 @@ def create_bge_in_icl_provider(
     adaptive_batching: bool = True,
     min_batch_size: int = 10,
     max_batch_size: int = 100,
+    batch_size: Optional[int] = None,
     context_cache_size: int = 100,
     **kwargs
 ) -> BGEInICLProvider:
@@ -1249,17 +1261,22 @@ def create_bge_in_icl_provider(
         enable_icl: Enable in-context learning features
         adaptive_batching: Enable adaptive batch sizing based on performance
         min_batch_size: Minimum batch size for adaptive batching
-        max_batch_size: Maximum batch size for adaptive batching
+        max_batch_size: Maximum batch size for adaptive batching (if no batch_size specified)
+        batch_size: User-configured batch size (overrides max_batch_size if specified)
         context_cache_size: Size of the context cache for ICL optimization
         **kwargs: Additional arguments passed to BGEInICLProvider
 
     Returns:
         Configured BGE-IN-ICL embedding provider with Phase 3 advanced features
     """
+    # Use user-configured batch_size or default
+    effective_batch_size = batch_size if batch_size is not None else 50
+
     return BGEInICLProvider(
         base_url=base_url,
         model=model,
         api_key=api_key,
+        batch_size=effective_batch_size,
         language=language,
         enable_icl=enable_icl,
         adaptive_batching=adaptive_batching,
