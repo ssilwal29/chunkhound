@@ -223,18 +223,31 @@ async def call_tool(
                 logger.info("Database not connected, reconnecting before semantic search")
                 _database.reconnect()
 
-            result = await _embedding_manager.embed_texts([query], provider)
-            query_vector = result.embeddings[0]
+            # Implement timeout coordination for MCP-OpenAI API latency mismatch
+            # MCP client timeout is typically 5-15s, but OpenAI API can take up to 30s
+            try:
+                # Use asyncio.wait_for with MCP-safe timeout (12 seconds)
+                # This is shorter than OpenAI's 30s timeout but allows most requests to complete
+                result = await asyncio.wait_for(
+                    _embedding_manager.embed_texts([query], provider),
+                    timeout=12.0
+                )
+                query_vector = result.embeddings[0]
 
-            results = _database.search_semantic(
-                query_vector=query_vector,
-                provider=provider,
-                model=model,
-                limit=limit,
-                threshold=threshold
-            )
+                results = _database.search_semantic(
+                    query_vector=query_vector,
+                    provider=provider,
+                    model=model,
+                    limit=limit,
+                    threshold=threshold
+                )
 
-            return [types.TextContent(type="text", text=convert_to_ndjson(results))]
+                return [types.TextContent(type="text", text=convert_to_ndjson(results))]
+
+            except asyncio.TimeoutError:
+                # Handle MCP timeout gracefully with informative error
+                raise Exception("Semantic search timed out. This can happen when OpenAI API is experiencing high latency. Please try again.")
+
         except Exception as e:
             raise Exception(f"Semantic search failed: {str(e)}")
 
