@@ -2,6 +2,7 @@
 
 import argparse
 from pathlib import Path
+from typing import Dict, Tuple
 
 from .main_parser import (
     add_common_arguments,
@@ -9,6 +10,81 @@ from .main_parser import (
     add_embedding_arguments,
     add_file_pattern_arguments,
 )
+
+
+def validate_batch_sizes(embedding_batch_size: int, db_batch_size: int, provider: str) -> Tuple[bool, str]:
+    """Validate batch size arguments against provider limits and system constraints.
+
+    Args:
+        embedding_batch_size: Number of texts per embedding API request
+        db_batch_size: Number of records per database transaction
+        provider: Embedding provider name
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Provider-specific embedding batch limits
+    embedding_limits: Dict[str, Tuple[int, int]] = {
+        'openai': (1, 2048),
+        'openai-compatible': (1, 1000),
+        'tei': (1, 512),
+        'bge-in-icl': (1, 256)
+    }
+
+    # Database batch limits (DuckDB optimized for large batches)
+    db_limits = (1, 10000)
+
+    # Validate embedding batch size
+    if provider in embedding_limits:
+        min_emb, max_emb = embedding_limits[provider]
+        if not (min_emb <= embedding_batch_size <= max_emb):
+            return False, f"Embedding batch size {embedding_batch_size} invalid for provider '{provider}'. Must be between {min_emb} and {max_emb}."
+    else:
+        # Default limits for unknown providers
+        if not (1 <= embedding_batch_size <= 1000):
+            return False, f"Embedding batch size {embedding_batch_size} invalid. Must be between 1 and 1000."
+
+    # Validate database batch size
+    min_db, max_db = db_limits
+    if not (min_db <= db_batch_size <= max_db):
+        return False, f"Database batch size {db_batch_size} invalid. Must be between {min_db} and {max_db}."
+
+    return True, ""
+
+
+def process_batch_arguments(args: argparse.Namespace) -> None:
+    """Process and validate batch arguments, handle deprecation warnings.
+
+    Args:
+        args: Parsed command line arguments
+
+    Raises:
+        SystemExit: If batch size validation fails
+    """
+    import sys
+
+    # Handle backward compatibility - --batch-size maps to --embedding-batch-size
+    if args.batch_size is not None:
+        print(
+            f"WARNING: --batch-size is deprecated. Use --embedding-batch-size instead.\n"
+            f"         Using --embedding-batch-size {args.batch_size} based on your --batch-size {args.batch_size}\n"
+            f"         Consider also setting --db-batch-size for optimal performance",
+            file=sys.stderr
+        )
+        # Only override if embedding_batch_size is still default
+        if args.embedding_batch_size == 100:  # Default value
+            args.embedding_batch_size = args.batch_size
+
+    # Validate batch sizes
+    is_valid, error_msg = validate_batch_sizes(
+        args.embedding_batch_size,
+        args.db_batch_size,
+        getattr(args, 'provider', 'openai')
+    )
+
+    if not is_valid:
+        print(f"Error: {error_msg}", file=sys.stderr)
+        sys.exit(1)
 
 
 def add_run_subparser(subparsers) -> argparse.ArgumentParser:
@@ -65,11 +141,27 @@ def add_run_subparser(subparsers) -> argparse.ArgumentParser:
         help="Force reindexing of all files, even if they haven't changed",
     )
 
+    # Unified batching system - two clear arguments
+    run_parser.add_argument(
+        "--embedding-batch-size",
+        type=int,
+        default=100,
+        help="Number of text chunks per embedding API request (default: 100, range: 1-2048)",
+    )
+
+    run_parser.add_argument(
+        "--db-batch-size",
+        type=int,
+        default=500,
+        help="Number of records per database transaction (default: 500, range: 1-10000)",
+    )
+
+    # Legacy arguments - deprecated but maintained for backward compatibility
     run_parser.add_argument(
         "--batch-size",
         type=int,
-        default=50,
-        help="Batch size for embedding generation (default: 50)",
+        default=None,
+        help="[DEPRECATED] Use --embedding-batch-size instead. Batch size for embedding generation",
     )
 
     run_parser.add_argument(

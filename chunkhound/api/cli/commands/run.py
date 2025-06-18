@@ -17,6 +17,7 @@ from ..utils.validation import (
     validate_path, validate_provider_args, validate_file_patterns,
     validate_numeric_args, ensure_database_directory
 )
+from ..parsers.run_parser import process_batch_arguments
 
 
 async def run_command(args: argparse.Namespace) -> None:
@@ -32,6 +33,9 @@ async def run_command(args: argparse.Namespace) -> None:
     formatter.info(f"Starting ChunkHound v{__version__}")
     formatter.info(f"Processing directory: {args.path}")
     formatter.info(f"Database: {args.db}")
+
+    # Process and validate batch arguments (includes deprecation warnings)
+    process_batch_arguments(args)
 
     # Validate arguments
     if not _validate_run_arguments(args, formatter):
@@ -117,8 +121,8 @@ def _validate_run_arguments(args: argparse.Namespace, formatter: OutputFormatter
     if not validate_file_patterns(args.include, args.exclude):
         return False
 
-    # Validate numeric arguments
-    if not validate_numeric_args(args.debounce_ms, getattr(args, 'batch_size', None)):
+    # Validate numeric arguments (batch validation now handled in process_batch_arguments)
+    if not validate_numeric_args(args.debounce_ms, getattr(args, 'embedding_batch_size', 100)):
         return False
 
     return True
@@ -152,10 +156,11 @@ def _build_registry_config(args: argparse.Namespace) -> Dict[str, Any]:
     config = {
         'database': {
             'path': str(args.db),
-            'type': 'duckdb'
+            'type': 'duckdb',
+            'batch_size': getattr(args, 'db_batch_size', 500),
         },
         'embedding': {
-            'batch_size': getattr(args, 'batch_size', 50),
+            'batch_size': getattr(args, 'embedding_batch_size', 100),
             'max_concurrent_batches': getattr(args, 'max_concurrent', 3),
         }
     }
