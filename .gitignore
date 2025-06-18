@@ -204,6 +204,7 @@ cython_debug/
 
 # ChunkHound database files
 *.db
+*.duckdb
 *.wal
 
 # MCP configuration files (may contain API keys)
