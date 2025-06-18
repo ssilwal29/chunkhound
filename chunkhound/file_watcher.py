@@ -109,17 +109,47 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
 
     def _queue_event(self, path: Path, event_type: str, old_path: Optional[Path] = None):
         """Queue a file change event if it passes filters and debouncing."""
+        # Enhanced diagnostic logging for debugging
+        import sys
+        import os
+
+        if os.environ.get("CHUNKHOUND_DEBUG"):
+            print(f"=== QUEUE EVENT ATTEMPT ===", file=sys.stderr)
+            print(f"Path: {path}", file=sys.stderr)
+            print(f"Event Type: {event_type}", file=sys.stderr)
+            print(f"Queue Available: {self.event_queue is not None}", file=sys.stderr)
+
+        if self.event_queue is None:
+            logger.warning(f"TIMING: Event queue not initialized, skipping {event_type} {path}")
+            if os.environ.get("CHUNKHOUND_DEBUG"):
+                print("❌ EVENT QUEUE NOT INITIALIZED", file=sys.stderr)
+                print("==========================", file=sys.stderr)
+            return
+
         # For deletion events, always check extension pattern
         # For other events, also verify file exists
         if event_type != 'deleted' and not path.is_file():
+            if os.environ.get("CHUNKHOUND_DEBUG"):
+                print("❌ FILE DOES NOT EXIST", file=sys.stderr)
+                print("==========================", file=sys.stderr)
             return
 
-        if not self._should_process_file(path):
+        should_process = self._should_process_file(path)
+        if os.environ.get("CHUNKHOUND_DEBUG"):
+            print(f"Should Process File: {should_process}", file=sys.stderr)
+        if not should_process:
+            if os.environ.get("CHUNKHOUND_DEBUG"):
+                print("❌ FILE SHOULD NOT BE PROCESSED", file=sys.stderr)
+                print("==========================", file=sys.stderr)
             return
 
         path_str = str(path)
         # Exempt deletion events from debounce to ensure immediate processing
+        # Rate limiting: only queue one event per file path
         if event_type != 'deleted' and not self._debounce_event(path_str):
+            if os.environ.get("CHUNKHOUND_DEBUG"):
+                print("❌ EVENT DEBOUNCED", file=sys.stderr)
+                print("==========================", file=sys.stderr)
             return
 
         event_timestamp = time.time()
@@ -134,9 +164,16 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
         try:
             self.event_queue.put_nowait(event)
             logger.debug(f"TIMING: Event queued at {event_timestamp:.6f} - {event_type} {path}")
+            if os.environ.get("CHUNKHOUND_DEBUG"):
+                print(f"✅ EVENT SUCCESSFULLY QUEUED", file=sys.stderr)
+                print(f"Queue Size After: {self.event_queue.qsize()}", file=sys.stderr)
+                print("==========================", file=sys.stderr)
         except asyncio.QueueFull:
             # Queue is full, skip this event
             logger.warning(f"TIMING: Event queue full, skipping {event_type} {path} at {event_timestamp:.6f}")
+            if os.environ.get("CHUNKHOUND_DEBUG"):
+                print("❌ EVENT QUEUE FULL", file=sys.stderr)
+                print("==========================", file=sys.stderr)
 
     def on_modified(self, event):
         """Handle file modification events."""
@@ -147,6 +184,15 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
     def on_created(self, event):
         """Handle file creation events."""
         if not event.is_directory:
+            # Diagnostic logging for file creation debugging
+            import sys
+            import os
+            if os.environ.get("CHUNKHOUND_DEBUG"):
+                print(f"=== FILE CREATION EVENT DETECTED ===", file=sys.stderr)
+                print(f"File: {event.src_path}", file=sys.stderr)
+                print(f"Timestamp: {time.time():.6f}", file=sys.stderr)
+                print(f"Is Directory: {event.is_directory}", file=sys.stderr)
+                print("====================================", file=sys.stderr)
             self._queue_event(Path(event.src_path), 'created')
 
     def on_moved(self, event):
@@ -386,7 +432,8 @@ async def process_file_change_queue(
         max_batch_size: Maximum number of events to process in one batch
     """
     logger.info(f"🔄 process_file_change_queue called - queue size: {event_queue.qsize()}")
-    print(f"DEBUG: process_file_change_queue called - queue size: {event_queue.qsize()}")
+    if os.environ.get("CHUNKHOUND_DEBUG"):
+        print(f"DEBUG: process_file_change_queue called - queue size: {event_queue.qsize()}")
     batch = []
 
     try:
@@ -468,6 +515,9 @@ class FileWatcherManager:
         for i, path in enumerate(self.watch_paths):
             logging.info(f"  [{i+1}] {path}")
 
+        # Initialize without diagnostics in MCP mode
+        pass
+
         try:
             # Create event queue
             self.event_queue = asyncio.Queue(maxsize=1000)
@@ -478,7 +528,6 @@ class FileWatcherManager:
                 self.last_scan_time - 300,  # 5 minutes buffer
                 timeout=3.0  # 3 second timeout to prevent IDE timeouts
             )
-
             # Queue offline changes for processing
             for change in offline_changes:
                 try:
@@ -507,7 +556,6 @@ class FileWatcherManager:
                                    process_callback: Callable[[Path, str], Awaitable[None]]):
         """Background task to process file change events."""
         logger.info("🔄 Queue processing loop started")
-        print("DEBUG: Queue processing loop started")
         loop_count = 0
 
         while True:
@@ -515,29 +563,23 @@ class FileWatcherManager:
                 # Wait for events and process them in batches
                 await asyncio.sleep(1.0)  # Process every second
                 loop_count += 1
-                print(f"DEBUG: Loop iteration {loop_count}")
 
                 if loop_count % 30 == 0:  # Log every 30 seconds
                     queue_size = self.event_queue.qsize() if self.event_queue else 0
                     logger.info(f"🔄 Queue processing loop active - queue size: {queue_size}")
-                    print(f"DEBUG: Loop active - queue size: {queue_size}")
 
                 if self.event_queue and not self.event_queue.empty():
                     queue_size = self.event_queue.qsize()
                     logger.info(f"📋 Processing queue with {queue_size} events")
-                    print(f"DEBUG: Processing queue with {queue_size} events")
                     await process_file_change_queue(self.event_queue, process_callback)
                     logger.info(f"✅ Queue processing batch completed")
-                    print(f"DEBUG: Queue processing batch completed")
 
             except asyncio.CancelledError:
                 logger.info("🛑 Queue processing loop cancelled")
-                print("DEBUG: Queue processing loop cancelled")
                 break
             except Exception as e:
                 # Continue processing even if individual batches fail
                 logger.error(f"❌ Queue processing loop error: {e}")
-                print(f"DEBUG: Queue processing loop error: {e}")
                 await asyncio.sleep(5.0)  # Back off on errors
 
     async def cleanup(self):

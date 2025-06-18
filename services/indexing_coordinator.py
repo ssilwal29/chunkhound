@@ -585,15 +585,37 @@ class IndexingCoordinator(BaseService):
 
     async def _generate_embeddings(self, chunk_ids: List[int], chunks: List[Dict[str, Any]]) -> int:
         """Generate embeddings for chunks."""
+        # Enhanced diagnostic logging for debugging
+        import sys
+        print("=== SEMANTIC EMBEDDING GENERATION ATTEMPT ===", file=sys.stderr)
+        print(f"Chunks count: {len(chunks)}", file=sys.stderr)
+        print(f"Chunk IDs: {chunk_ids[:5]}..." if len(chunk_ids) > 5 else f"Chunk IDs: {chunk_ids}", file=sys.stderr)
+        print(f"Provider available: {self._embedding_provider is not None}", file=sys.stderr)
+
+        logger.info(f"SEMANTIC_DEBUG: _generate_embeddings called for {len(chunk_ids)} chunks")
+        logger.info(f"SEMANTIC_DEBUG: embedding_provider available: {self._embedding_provider is not None}")
+
         if not self._embedding_provider:
+            logger.info(f"SEMANTIC_DEBUG: No embedding provider - returning 0")
+            print("❌ EMBEDDING PROVIDER IS NONE - SEMANTIC INDEXING SKIPPED", file=sys.stderr)
+            print("===============================================", file=sys.stderr)
             return 0
+
+        print(f"✅ Provider type: {type(self._embedding_provider)}", file=sys.stderr)
+        print(f"Provider name: {self._embedding_provider.name}", file=sys.stderr)
+        print(f"Provider model: {self._embedding_provider.model}", file=sys.stderr)
 
         try:
             # Extract text content for embedding
             texts = [chunk.get("code", "") for chunk in chunks]
+            print(f"Text samples extracted: {len(texts)}", file=sys.stderr)
+            if texts:
+                print(f"First text sample: {texts[0][:100]}...", file=sys.stderr)
 
             # Generate embeddings
+            print("🔄 Attempting embedding generation...", file=sys.stderr)
             embedding_results = await self._embedding_provider.embed(texts)
+            print(f"✅ Embedding generation completed: {len(embedding_results)} vectors", file=sys.stderr)
 
             # Store embeddings in database
             embeddings_data = []
@@ -606,9 +628,22 @@ class IndexingCoordinator(BaseService):
                     "embedding": vector
                 })
 
-            return self._db.insert_embeddings_batch(embeddings_data)
+            print(f"📦 Prepared {len(embeddings_data)} embeddings for storage", file=sys.stderr)
+
+            # Database storage with diagnostics
+            print("💾 Attempting database storage...", file=sys.stderr)
+            result = self._db.insert_embeddings_batch(embeddings_data)
+            print(f"✅ Database storage completed: {result} embeddings inserted", file=sys.stderr)
+            print("===============================================", file=sys.stderr)
+
+            logger.info(f"SEMANTIC_DEBUG: Successfully generated {result} embeddings")
+            return result
 
         except Exception as e:
+            print(f"❌ SEMANTIC EMBEDDING GENERATION FAILED: {e}", file=sys.stderr)
+            print(f"Error type: {type(e).__name__}", file=sys.stderr)
+            print("===============================================", file=sys.stderr)
+            logger.error(f"SEMANTIC_DEBUG: Failed to generate embeddings: {e}")
             logger.error(f"Failed to generate embeddings: {e}")
             return 0
 
