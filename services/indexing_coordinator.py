@@ -454,8 +454,8 @@ class IndexingCoordinator(BaseService):
                 logger.warning(f"Unsupported existing_file type: {type(existing_file)}")
                 return False
 
-            # Use larger tolerance (1.0 second) for filesystem timestamp variations
-            tolerance = 1.0  # Increased from 0.01 to 1.0 second to avoid false negatives
+            # Use smaller tolerance (0.1 second) for development workflow
+            tolerance = 0.1  # Reduced from 1.0s to 0.1s to allow rapid modifications during development
             time_diff = abs(existing_mtime - current_mtime)
             logger.debug(f"File timestamp comparison: diff={time_diff}, tolerance={tolerance}")
             return time_diff < tolerance

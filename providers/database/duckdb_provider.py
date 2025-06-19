@@ -1841,10 +1841,10 @@ class DuckDBProvider:
                         existing_mtime = 0.0
                         logger.debug(f"Incremental processing - No valid timestamp found, using default: {existing_mtime}")
 
-                    # Check if file is unchanged (use larger tolerance for filesystem timestamp variations)
+                    # Check if file is unchanged (use smaller tolerance for development workflow)
                     time_diff = abs(existing_mtime - current_mtime)
-                    logger.debug(f"Incremental processing - Time difference: {time_diff} (tolerance: 1.0)")
-                    if time_diff < 1.0:  # Increased tolerance from 0.01 to 1.0 second to avoid false negatives
+                    logger.debug(f"Incremental processing - Time difference: {time_diff} (tolerance: 0.1)")
+                    if time_diff < 0.1:  # Reduced from 1.0s to 0.1s to allow rapid modifications during development
                         # File is unchanged, get chunk count
                         file_id = existing_file["id"]
                         logger.debug(f"Incremental processing - File unchanged, retrieving chunk count for file_id: {file_id}")
