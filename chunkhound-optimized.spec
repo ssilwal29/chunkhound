@@ -20,6 +20,14 @@ hiddenimports = [
     'chunkhound.api.cli.commands.mcp',
     'chunkhound.mcp_entry',
 
+    # Core chunkhound modules for MCP server (PyInstaller import fallback fix)
+    'chunkhound.database',
+    'chunkhound.embeddings',
+    'chunkhound.signal_coordinator',
+    'chunkhound.file_watcher',
+    'chunkhound.core.config',
+    'chunkhound.registry',
+
     # Core system modules
     'core.models.chunk',
     'core.models.file',

@@ -5,28 +5,50 @@ from typing import Any, Dict, Optional, Type, TypeVar
 import inspect
 from loguru import logger
 
-from core.types import Language
+# Import core types with PyInstaller fallback
+try:
+    from core.types import Language
+except ImportError:
+    from chunkhound.core.types import Language
 
-# Import concrete providers
-from providers.database.duckdb_provider import DuckDBProvider
-from providers.embeddings.openai_provider import OpenAIEmbeddingProvider
+# Import concrete providers with PyInstaller fallback
+try:
+    from providers.database.duckdb_provider import DuckDBProvider
+    from providers.embeddings.openai_provider import OpenAIEmbeddingProvider
 
+    # Import language parsers
+    from providers.parsing.python_parser import PythonParser
+    from providers.parsing.java_parser import JavaParser
+    from providers.parsing.javascript_parser import JavaScriptParser
+    from providers.parsing.typescript_parser import TypeScriptParser
+    from providers.parsing.csharp_parser import CSharpParser
+    from providers.parsing.markdown_parser import MarkdownParser
+    from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
 
+    # Import services
+    from services.base_service import BaseService
+    from services.indexing_coordinator import IndexingCoordinator
+    from services.search_service import SearchService
+    from services.embedding_service import EmbeddingService
+except ImportError:
+    # PyInstaller-compatible imports
+    from chunkhound.providers.database.duckdb_provider import DuckDBProvider
+    from chunkhound.providers.embeddings.openai_provider import OpenAIEmbeddingProvider
 
-# Import language parsers
-from providers.parsing.python_parser import PythonParser
-from providers.parsing.java_parser import JavaParser
-from providers.parsing.javascript_parser import JavaScriptParser
-from providers.parsing.typescript_parser import TypeScriptParser
-from providers.parsing.csharp_parser import CSharpParser
-from providers.parsing.markdown_parser import MarkdownParser
-from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
+    # Import language parsers
+    from chunkhound.providers.parsing.python_parser import PythonParser
+    from chunkhound.providers.parsing.java_parser import JavaParser
+    from chunkhound.providers.parsing.javascript_parser import JavaScriptParser
+    from chunkhound.providers.parsing.typescript_parser import TypeScriptParser
+    from chunkhound.providers.parsing.csharp_parser import CSharpParser
+    from chunkhound.providers.parsing.markdown_parser import MarkdownParser
+    from chunkhound.providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
 
-# Import services
-from services.base_service import BaseService
-from services.indexing_coordinator import IndexingCoordinator
-from services.search_service import SearchService
-from services.embedding_service import EmbeddingService
+    # Import services
+    from chunkhound.services.base_service import BaseService
+    from chunkhound.services.indexing_coordinator import IndexingCoordinator
+    from chunkhound.services.search_service import SearchService
+    from chunkhound.services.embedding_service import EmbeddingService
 
 T = TypeVar('T')
 
