@@ -9,7 +9,8 @@ from loguru import logger
 try:
     from core.types import Language
 except ImportError:
-    from chunkhound.core.types import Language
+    # Fallback for different execution contexts
+    from core.types.common import Language
 
 # Import concrete providers with PyInstaller fallback
 try:

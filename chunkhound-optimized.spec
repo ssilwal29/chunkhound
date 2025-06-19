@@ -26,6 +26,10 @@ hiddenimports = [
     'chunkhound.signal_coordinator',
     'chunkhound.file_watcher',
     'chunkhound.core.config',
+    'core.types',
+    'core.types.common',
+    'chunkhound.core.types',
+    'chunkhound.core.types.common',
     'chunkhound.registry',
 
     # Core system modules
