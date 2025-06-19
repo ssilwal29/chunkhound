@@ -41,13 +41,15 @@ try:
     from .signal_coordinator import SignalCoordinator
     from .file_watcher import FileWatcherManager
     from .core.config import EmbeddingConfig, EmbeddingProviderFactory
+    from .registry import configure_registry
 except ImportError:
-    # Handle running as standalone script
-    from database import Database
-    from embeddings import EmbeddingManager
-    from signal_coordinator import SignalCoordinator
-    from file_watcher import FileWatcherManager
-    from core.config import EmbeddingConfig, EmbeddingProviderFactory
+    # Handle running as standalone script or PyInstaller binary
+    from chunkhound.database import Database
+    from chunkhound.embeddings import EmbeddingManager
+    from chunkhound.signal_coordinator import SignalCoordinator
+    from chunkhound.file_watcher import FileWatcherManager
+    from chunkhound.core.config import EmbeddingConfig, EmbeddingProviderFactory
+    from registry import configure_registry
 
 # Global database, embedding manager, and file watcher instances
 # Global state management
@@ -58,6 +60,41 @@ _signal_coordinator: Optional[SignalCoordinator] = None
 
 # Initialize MCP server with explicit stdio
 server = Server("ChunkHound Code Search")
+
+
+def _build_mcp_registry_config(config: EmbeddingConfig, db_path: Path) -> Dict[str, Any]:
+    """Build registry configuration for MCP server mode.
+
+    Args:
+        config: Embedding configuration
+        db_path: Database path
+
+    Returns:
+        Registry configuration dictionary
+    """
+    registry_config = {
+        'database': {
+            'path': str(db_path),
+            'type': 'duckdb',
+            'batch_size': 500,  # Default batch size
+        },
+        'embedding': {
+            'batch_size': 100,  # Default embedding batch size
+            'max_concurrent_batches': 3,
+            'provider': config.provider,
+            'model': config.model,
+        }
+    }
+
+    # Add API key if available
+    if config.api_key:
+        registry_config['embedding']['api_key'] = config.api_key.get_secret_value()
+
+    # Add base URL if available
+    if config.base_url:
+        registry_config['embedding']['base_url'] = config.base_url
+
+    return registry_config
 
 
 def setup_signal_coordination(db_path: Path, database: Database):
@@ -95,6 +132,9 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
     """Manage server startup and shutdown lifecycle."""
     global _database, _embedding_manager, _file_watcher, _signal_coordinator
 
+    # Set MCP mode to suppress stderr output that interferes with JSON-RPC
+    os.environ["CHUNKHOUND_MCP_MODE"] = "1"
+
     if "CHUNKHOUND_DEBUG" in os.environ:
         print("Server lifespan: Starting initialization", file=sys.stderr)
 
@@ -109,48 +149,39 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
         if "CHUNKHOUND_DEBUG" in os.environ:
             print(f"Server lifespan: Using database at {db_path}", file=sys.stderr)
 
-        _database = Database(db_path)
-        try:
-            # Initialize database with connection only - no background refresh thread
-            _database.connect()
-            if "CHUNKHOUND_DEBUG" in os.environ:
-                print("Server lifespan: Database connected successfully", file=sys.stderr)
-        except Exception as db_error:
-            if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"Server lifespan: Database connection error: {db_error}", file=sys.stderr)
-                import traceback
-                traceback.print_exc(file=sys.stderr)
-            raise
-
-        # Setup signal coordination for process coordination
-        setup_signal_coordination(db_path, _database)
-        if "CHUNKHOUND_DEBUG" in os.environ:
-            print("Server lifespan: Signal coordination setup complete", file=sys.stderr)
-
-        # Initialize embedding manager
+        # Initialize embedding configuration BEFORE database creation
         _embedding_manager = EmbeddingManager()
         if "CHUNKHOUND_DEBUG" in os.environ:
             print("Server lifespan: Embedding manager initialized", file=sys.stderr)
 
-        # Try to register embedding provider using unified configuration (optional)
+        # Setup embedding provider and registry configuration
+        embedding_config = None
         try:
             # Load configuration with environment variable support
-            config = EmbeddingConfig()
+            embedding_config = EmbeddingConfig()
 
             # Maintain backward compatibility with legacy OPENAI_API_KEY
             legacy_api_key = os.environ.get('OPENAI_API_KEY')
-            if not config.api_key and legacy_api_key:
+            if not embedding_config.api_key and legacy_api_key:
                 from pydantic import SecretStr
-                config.api_key = SecretStr(legacy_api_key)
-                if config.provider == 'openai' and "CHUNKHOUND_DEBUG" in os.environ:
+                embedding_config.api_key = SecretStr(legacy_api_key)
+                if embedding_config.provider == 'openai' and "CHUNKHOUND_DEBUG" in os.environ:
                     print("Server lifespan: Using legacy OPENAI_API_KEY for backward compatibility", file=sys.stderr)
 
             # Create provider using unified factory
-            provider = EmbeddingProviderFactory.create_provider(config)
+            provider = EmbeddingProviderFactory.create_provider(embedding_config)
             _embedding_manager.register_provider(provider, set_default=True)
 
             if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"Server lifespan: Embedding provider registered successfully: {config.provider} with model {config.model}", file=sys.stderr)
+                print(f"Server lifespan: Embedding provider registered successfully: {embedding_config.provider} with model {embedding_config.model}", file=sys.stderr)
+
+            # CRITICAL FIX: Configure registry BEFORE database creation
+            registry_config = _build_mcp_registry_config(embedding_config, db_path)
+            configure_registry(registry_config)
+
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: Registry configured with embedding provider", file=sys.stderr)
+                print(f"Server lifespan: Registry config: {registry_config}", file=sys.stderr)
 
         except ValueError as e:
             # API key or configuration issue - only log in non-MCP mode
@@ -169,6 +200,36 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 print(f"Server lifespan: Unexpected error setting up embedding provider: {e}", file=sys.stderr)
                 import traceback
                 traceback.print_exc(file=sys.stderr)
+
+        # Create database AFTER registry configuration
+        _database = Database(db_path)
+        try:
+            # Initialize database with connection only - no background refresh thread
+            _database.connect()
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: Database connected successfully", file=sys.stderr)
+                # Verify IndexingCoordinator has embedding provider
+                try:
+                    try:
+                        from .registry import get_registry
+                    except ImportError:
+                        from registry import get_registry
+                    indexing_coordinator = get_registry().create_indexing_coordinator()
+                    has_embedding_provider = indexing_coordinator._embedding_provider is not None
+                    print(f"Server lifespan: IndexingCoordinator embedding provider available: {has_embedding_provider}", file=sys.stderr)
+                except Exception as debug_error:
+                    print(f"Server lifespan: Debug check failed: {debug_error}", file=sys.stderr)
+        except Exception as db_error:
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Server lifespan: Database connection error: {db_error}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+            raise
+
+        # Setup signal coordination for process coordination
+        setup_signal_coordination(db_path, _database)
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Server lifespan: Signal coordination setup complete", file=sys.stderr)
 
         # Initialize filesystem watcher with offline catch-up
         _file_watcher = FileWatcherManager()
