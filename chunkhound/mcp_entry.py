@@ -38,8 +38,15 @@ async def main():
         db_path = str(Path.home() / ".cache" / "chunkhound" / "chunks.duckdb")
         os.environ["CHUNKHOUND_DB_PATH"] = db_path
 
-    # Ensure OpenAI API key is available for semantic search
-    # This handles cases where the key might be set in parent process but not inherited
+    # Ensure embedding API keys are available for semantic search
+    # This handles cases where keys might be set in parent process but not inherited
+
+    # Handle new unified API key
+    chunkhound_api_key = os.environ.get("CHUNKHOUND_EMBEDDING_API_KEY")
+    if chunkhound_api_key:
+        os.environ["CHUNKHOUND_EMBEDDING_API_KEY"] = chunkhound_api_key
+
+    # Handle legacy OpenAI API key for backward compatibility
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     if openai_api_key:
         os.environ["OPENAI_API_KEY"] = openai_api_key
