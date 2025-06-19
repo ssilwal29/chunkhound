@@ -7,6 +7,7 @@ as well as filtered CLI argument parsing.
 """
 
 import json
+import os
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -59,11 +60,15 @@ class BaseFileConfigSettingsSource(PydanticBaseSettingsSource, ABC):
                         merged_data.update(file_data)
                 except Exception as e:
                     # Log warning but continue with other files
-                    print(f"Warning: Failed to load config file {config_file}: {e}", file=sys.stderr)
+                    # Skip stderr output in MCP mode to avoid JSON-RPC interference
+                    if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                        print(f"Warning: Failed to load config file {config_file}: {e}", file=sys.stderr)
             else:
                 # Only warn if it's the first/only config file
                 if len(self.config_files) == 1:
-                    print(f"Warning: Config file {config_file} not found", file=sys.stderr)
+                    # Skip stderr output in MCP mode to avoid JSON-RPC interference
+                    if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                        print(f"Warning: Config file {config_file} not found", file=sys.stderr)
 
         return merged_data
 
@@ -381,7 +386,9 @@ def create_config_sources(
             elif config_path.suffix.lower() == '.json':
                 sources.append(JsonConfigSettingsSource(settings_cls, config_path))
             else:
-                print(f"Warning: Unknown config file format: {config_path}", file=sys.stderr)
+                # Skip stderr output in MCP mode to avoid JSON-RPC interference
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    print(f"Warning: Unknown config file format: {config_path}", file=sys.stderr)
 
     return sources
 
