@@ -1162,7 +1162,15 @@ class DuckDBProvider:
         model = first_embedding['model']
 
         # Use HNSW index optimization for larger batches (Context7 research shows 10-20x improvement)
-        use_hnsw_optimization = actual_batch_size >= hnsw_threshold
+        # BATCH THRESHOLD FIX: Force HNSW optimization for all semantic updates (Phase 1)
+        # This fixes 60+ second real-time update delays by ensuring fast path is always used
+        use_hnsw_optimization = True  # Force optimization - TODO: Make context-aware in Phase 2
+
+        # Log the optimization decision for debugging
+        if actual_batch_size >= hnsw_threshold:
+            logger.debug(f"🚀 Large batch: using HNSW optimization ({actual_batch_size} >= {hnsw_threshold})")
+        else:
+            logger.debug(f"🔧 BATCH THRESHOLD FIX: Forcing HNSW optimization for small batch ({actual_batch_size} < {hnsw_threshold}) - Phase 1 active")
 
         try:
             total_inserted = 0
