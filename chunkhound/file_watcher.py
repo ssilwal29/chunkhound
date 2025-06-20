@@ -87,7 +87,7 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
         self.event_queue = event_queue
         self.include_patterns = include_patterns or SUPPORTED_EXTENSIONS
         self.last_events: Dict[str, float] = {}
-        self.debounce_delay = 2.0  # 2-second debounce
+        self.debounce_delay = 0.3  # 300ms debounce
 
     def _should_process_file(self, file_path: Path) -> bool:
         """Check if file should be processed based on extension and patterns."""
