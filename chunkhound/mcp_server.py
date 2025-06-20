@@ -300,6 +300,18 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
             print("Server lifespan: Cleanup complete", file=sys.stderr)
 
 
+async def _wait_for_file_completion(file_path: Path, max_retries: int = 3) -> bool:
+    """Wait for file to be fully written (not locked by editor)"""
+    for _ in range(max_retries):
+        try:
+            with open(file_path, 'rb') as f:
+                f.read(1)  # Test read access
+            return True
+        except (IOError, PermissionError):
+            await asyncio.sleep(0.1)  # Brief wait
+    return False
+
+
 async def process_file_change(file_path: Path, event_type: str):
     """
     Process a file change event by updating the database.
@@ -319,6 +331,10 @@ async def process_file_change(file_path: Path, event_type: str):
         else:
             # Process file (created, modified, moved)
             if file_path.exists() and file_path.is_file():
+                # Phase 4: Verify file is fully written before processing
+                if not await _wait_for_file_completion(file_path):
+                    return  # Skip if file not ready
+
                 # Use incremental processing for 10-100x performance improvement
                 await _database.process_file_incremental(file_path=file_path)
     except Exception as e:
