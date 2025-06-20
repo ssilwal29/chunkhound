@@ -1843,8 +1843,8 @@ class DuckDBProvider:
 
                     # Check if file is unchanged (use smaller tolerance for development workflow)
                     time_diff = abs(existing_mtime - current_mtime)
-                    logger.debug(f"Incremental processing - Time difference: {time_diff} (tolerance: 0.1)")
-                    if time_diff < 0.1:  # Reduced from 1.0s to 0.1s to allow rapid modifications during development
+                    logger.debug(f"Incremental processing - Time difference: {time_diff} (tolerance: 0.01)")
+                    if time_diff < 0.01:  # Reduced from 0.1s to 0.01s to fix race condition with rapid edits
                         # File is unchanged, get chunk count
                         file_id = existing_file["id"]
                         logger.debug(f"Incremental processing - File unchanged, retrieving chunk count for file_id: {file_id}")

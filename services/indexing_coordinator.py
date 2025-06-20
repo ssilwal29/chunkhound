@@ -108,6 +108,7 @@ class IndexingCoordinator(BaseService):
         Returns:
             Dictionary with processing results including status, chunks, and embeddings
         """
+
         try:
             # Validate file exists and is readable
             if not file_path.exists() or not file_path.is_file():
@@ -454,8 +455,8 @@ class IndexingCoordinator(BaseService):
                 logger.warning(f"Unsupported existing_file type: {type(existing_file)}")
                 return False
 
-            # Use smaller tolerance (0.1 second) for development workflow
-            tolerance = 0.1  # Reduced from 1.0s to 0.1s to allow rapid modifications during development
+            # Use smaller tolerance (0.01 second) for development workflow
+            tolerance = 0.01  # Reduced from 0.1s to 0.01s to fix race condition with rapid edits
             time_diff = abs(existing_mtime - current_mtime)
             logger.debug(f"File timestamp comparison: diff={time_diff}, tolerance={tolerance}")
             return time_diff < tolerance
