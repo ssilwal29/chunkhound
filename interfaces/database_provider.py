@@ -103,12 +103,13 @@ class DatabaseProvider(Protocol):
         """Insert embedding record and return embedding ID."""
         ...
 
-    def insert_embeddings_batch(self, embeddings_data: List[Dict], batch_size: Optional[int] = None) -> int:
+    def insert_embeddings_batch(self, embeddings_data: List[Dict], batch_size: Optional[int] = None, connection=None) -> int:
         """Insert multiple embedding vectors with optimization.
 
         Args:
             embeddings_data: List of embedding data dictionaries
             batch_size: Optional batch size for database operations (uses provider default if None)
+            connection: Optional database connection to use (for transaction contexts)
         """
         ...
 

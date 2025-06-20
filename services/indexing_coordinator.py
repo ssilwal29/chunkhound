@@ -290,7 +290,7 @@ class IndexingCoordinator(BaseService):
             # Generate embeddings if requested
             embeddings_generated = 0
             if not skip_embeddings and self._embedding_provider and chunk_ids:
-                embeddings_generated = await self._generate_embeddings(chunk_ids, chunks)
+                embeddings_generated = await self._generate_embeddings(chunk_ids, chunks, connection)
                 logger.debug(f"Transaction-safe processing - Generated {embeddings_generated} embeddings")
 
             # Commit transaction
@@ -584,7 +584,7 @@ class IndexingCoordinator(BaseService):
             logger.error(f"Failed to generate missing embeddings: {e}")
             return {"status": "error", "error": str(e), "generated": 0}
 
-    async def _generate_embeddings(self, chunk_ids: List[int], chunks: List[Dict[str, Any]]) -> int:
+    async def _generate_embeddings(self, chunk_ids: List[int], chunks: List[Dict[str, Any]], connection=None) -> int:
         """Generate embeddings for chunks."""
         logger.info(f"SEMANTIC_DEBUG: _generate_embeddings called for {len(chunk_ids)} chunks")
         logger.info(f"SEMANTIC_DEBUG: embedding_provider available: {self._embedding_provider is not None}")
@@ -611,8 +611,8 @@ class IndexingCoordinator(BaseService):
                     "embedding": vector
                 })
 
-            # Database storage
-            result = self._db.insert_embeddings_batch(embeddings_data)
+            # Database storage - use provided connection for transaction context
+            result = self._db.insert_embeddings_batch(embeddings_data, connection=connection)
 
             logger.info(f"SEMANTIC_DEBUG: Successfully generated {result} embeddings")
             return result

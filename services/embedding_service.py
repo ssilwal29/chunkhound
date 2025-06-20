@@ -270,9 +270,27 @@ class EmbeddingService(BaseService):
         provider_name = self._embedding_provider.name
         model_name = self._embedding_provider.model
 
-        # Get existing embeddings - need to implement this method or use alternative
-        # For now, assume all chunks need embeddings
-        existing_chunk_ids = set()
+        # Get existing embeddings from database
+        try:
+            # Determine table name based on embedding dimensions
+            # We need to check what dimensions this provider/model uses
+            if hasattr(self._embedding_provider, 'get_dimensions'):
+                dims = self._embedding_provider.get_dimensions()
+            else:
+                # Default to 1536 for most embedding models (OpenAI, etc.)
+                dims = 1536
+
+            table_name = f"embeddings_{dims}"
+
+            existing_chunk_ids = self._db.get_existing_embeddings(
+                chunk_ids=chunk_ids,
+                provider=provider_name,
+                model=model_name,
+                table_name=table_name
+            )
+        except Exception as e:
+            logger.error(f"Failed to get existing embeddings: {e}")
+            existing_chunk_ids = set()
 
         # Filter out chunks that already have embeddings
         filtered_chunks = []

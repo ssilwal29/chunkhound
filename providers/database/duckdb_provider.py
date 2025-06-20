@@ -1113,7 +1113,7 @@ class DuckDBProvider:
             logger.error(f"Failed to insert embedding: {e}")
             raise
 
-    def insert_embeddings_batch(self, embeddings_data: List[Dict], batch_size: Optional[int] = None) -> int:
+    def insert_embeddings_batch(self, embeddings_data: List[Dict], batch_size: Optional[int] = None, connection=None) -> int:
         """Insert multiple embedding vectors with HNSW index optimization.
 
         For large batches (>= batch_size threshold), uses the Context7-recommended optimization:
@@ -1126,11 +1126,14 @@ class DuckDBProvider:
         Args:
             embeddings_data: List of dicts with keys: chunk_id, provider, model, embedding, dims
             batch_size: Threshold for HNSW optimization (default: 50)
+            connection: Optional database connection to use (for transaction contexts)
 
         Returns:
             Number of successfully inserted embeddings
         """
-        if self.connection is None:
+        # Use provided connection or default connection
+        conn = connection if connection is not None else self.connection
+        if conn is None:
             raise RuntimeError("No database connection")
 
         if not embeddings_data:
@@ -1220,7 +1223,7 @@ class DuckDBProvider:
 
                     try:
                         # Set DuckDB performance options for bulk loading
-                        self.connection.execute("SET preserve_insertion_order = false")
+                        conn.execute("SET preserve_insertion_order = false")
 
                         # Build VALUES clause for bulk insert (much faster than executemany)
                         values_parts = []
@@ -1230,7 +1233,7 @@ class DuckDBProvider:
 
                         # Single INSERT with all values (fastest approach without external deps)
                         values_clause = ",\n    ".join(values_parts)
-                        self.connection.execute(f"""
+                        conn.execute(f"""
                             INSERT INTO {table_name} (chunk_id, provider, model, embedding, dims)
                             VALUES {values_clause}
                         """)
@@ -1258,7 +1261,7 @@ class DuckDBProvider:
 
                         # Single INSERT OR REPLACE with all values
                         values_clause = ",\n    ".join(values_parts)
-                        self.connection.execute(f"""
+                        conn.execute(f"""
                             INSERT OR REPLACE INTO {table_name} (chunk_id, provider, model, embedding, dims)
                             VALUES {values_clause}
                         """)
@@ -1306,7 +1309,7 @@ class DuckDBProvider:
 
                     # Single INSERT OR REPLACE with all values
                     values_clause = ",\n    ".join(values_parts)
-                    self.connection.execute(f"""
+                    conn.execute(f"""
                         INSERT OR REPLACE INTO {table_name} (chunk_id, provider, model, embedding, dims)
                         VALUES {values_clause}
                     """)
