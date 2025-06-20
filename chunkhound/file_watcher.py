@@ -87,7 +87,9 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
         self.event_queue = event_queue
         self.include_patterns = include_patterns or SUPPORTED_EXTENSIONS
         self.last_events: Dict[str, float] = {}
-        self.debounce_delay = 0.3  # 300ms debounce
+        self.debounce_delay = 1.0  # 1s debounce for multiple watchdog events
+        self.recent_events: Dict[str, tuple[str, float]] = {}  # Track recent events for deduplication
+        self.pending_atomic_writes: Dict[str, float] = {}  # Track atomic write sequences
 
     def _should_process_file(self, file_path: Path) -> bool:
         """Check if file should be processed based on extension and patterns."""
@@ -105,6 +107,13 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
             return False
 
         self.last_events[file_path] = now
+
+        # Cleanup old entries to prevent memory leaks (keep entries < 1 hour old)
+        if len(self.last_events) > 1000:  # Only cleanup when dict gets large
+            cutoff_time = now - 3600  # 1 hour ago
+            self.last_events = {path: timestamp for path, timestamp in self.last_events.items()
+                               if timestamp > cutoff_time}
+
         return True
 
     def _queue_event(self, path: Path, event_type: str, old_path: Optional[Path] = None):
@@ -153,6 +162,31 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
             return
 
         event_timestamp = time.time()
+
+        # Check for duplicate event (Phase 2: Event Deduplication)
+        if path_str in self.recent_events:
+            last_event_type, last_time = self.recent_events[path_str]
+            if (event_type == last_event_type and
+                event_timestamp - last_time < 0.5):  # 500ms duplicate window
+                if os.environ.get("CHUNKHOUND_DEBUG"):
+                    print("❌ DUPLICATE EVENT FILTERED", file=sys.stderr)
+                    print("==========================", file=sys.stderr)
+                return
+
+        # Record event for deduplication tracking
+        self.recent_events[path_str] = (event_type, event_timestamp)
+
+        # Cleanup old deduplication entries
+        if len(self.recent_events) > 500:
+            cutoff_time = event_timestamp - 60  # Keep entries from last 1 minute
+            self.recent_events = {path: (event_type, timestamp) for path, (event_type, timestamp) in self.recent_events.items()
+                                 if timestamp > cutoff_time}
+
+        # Cleanup old atomic write tracking entries
+        if len(self.pending_atomic_writes) > 500:
+            cutoff_time = event_timestamp - 10  # Keep entries from last 10 seconds
+            self.pending_atomic_writes = {path: timestamp for path, timestamp in self.pending_atomic_writes.items()
+                                         if timestamp > cutoff_time}
         event = FileChangeEvent(
             path=path,
             event_type=event_type,
@@ -178,12 +212,27 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
     def on_modified(self, event):
         """Handle file modification events."""
         if not event.is_directory:
+            # Phase 3: Check if this is part of atomic write sequence
+            path_str = str(event.src_path)
+            if path_str in self.pending_atomic_writes:
+                creation_time = self.pending_atomic_writes[path_str]
+                if time.time() - creation_time < 1.0:  # Within 1s of creation
+                    logger.debug(f"TIMING: Skipping intermediate atomic write modification - {event.src_path}")
+                    return  # Skip this intermediate event
+                else:
+                    # Remove from pending if too old
+                    del self.pending_atomic_writes[path_str]
+
             logger.debug(f"TIMING: File modified detected at {time.time():.6f} - {event.src_path}")
             self._queue_event(Path(event.src_path), 'modified')
 
     def on_created(self, event):
         """Handle file creation events."""
         if not event.is_directory:
+            # Phase 3: Track potential start of atomic write sequence
+            path_str = str(event.src_path)
+            self.pending_atomic_writes[path_str] = time.time()
+
             # Diagnostic logging for file creation debugging
             import sys
             import os
@@ -192,6 +241,7 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
                 print(f"File: {event.src_path}", file=sys.stderr)
                 print(f"Timestamp: {time.time():.6f}", file=sys.stderr)
                 print(f"Is Directory: {event.is_directory}", file=sys.stderr)
+                print(f"Marked as potential atomic write", file=sys.stderr)
                 print("====================================", file=sys.stderr)
             self._queue_event(Path(event.src_path), 'created')
 
