@@ -236,6 +236,20 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
         try:
             if "CHUNKHOUND_DEBUG" in os.environ:
                 print("Server lifespan: Initializing file watcher...", file=sys.stderr)
+            
+            # Check if watchdog is available before initializing
+            try:
+                from .file_watcher import WATCHDOG_AVAILABLE
+            except ImportError:
+                from chunkhound.file_watcher import WATCHDOG_AVAILABLE
+            
+            if not WATCHDOG_AVAILABLE:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("⚠️  MCP SERVER WARNING: watchdog library not available!", file=sys.stderr)
+                    print("   File modification detection is DISABLED", file=sys.stderr)
+                    print("   File creation/deletion will work, but modifications will be missed", file=sys.stderr)
+                    print("   To fix: ensure watchdog is included in binary build", file=sys.stderr)
+            
             await _file_watcher.initialize(process_file_change)
             if "CHUNKHOUND_DEBUG" in os.environ:
                 print("Server lifespan: File watcher initialized successfully", file=sys.stderr)
