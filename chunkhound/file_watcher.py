@@ -16,9 +16,34 @@ from dataclasses import dataclass
 
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import json
+from datetime import datetime
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+# Debug logging function for MCP-safe debugging
+def debug_log(event_type, **data):
+    """Log debug events to file (MCP-safe)."""
+    try:
+        if os.environ.get("CHUNKHOUND_DEBUG_MODE") == "1":
+            debug_dir = Path(".mem/debug")
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            debug_file = debug_dir / f"chunkhound-watcher-debug-{os.getpid()}.jsonl"
+
+            entry = {
+                "timestamp": time.time(),
+                "timestamp_iso": datetime.now().isoformat(),
+                "event": event_type,
+                "process_id": os.getpid(),
+                "data": data
+            }
+
+            with open(debug_file, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+                f.flush()
+    except:
+        pass  # Silent fail for MCP safety
 
 # Complete set of supported file extensions based on Language enum
 SUPPORTED_EXTENSIONS = {
@@ -84,12 +109,11 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
 
     def __init__(self, event_queue: asyncio.Queue, include_patterns: Optional[Set[str]] = None):
         super().__init__()
+        debug_log("handler_init", event_queue_available=event_queue is not None,
+                 include_patterns=list(include_patterns) if include_patterns else None)
         self.event_queue = event_queue
         self.include_patterns = include_patterns or SUPPORTED_EXTENSIONS
-        self.last_events: Dict[str, float] = {}
-        self.debounce_delay = 1.0  # 1s debounce for multiple watchdog events
-        self.recent_events: Dict[str, tuple[str, float]] = {}  # Track recent events for deduplication
-        self.pending_atomic_writes: Dict[str, float] = {}  # Track atomic write sequences
+
 
     def _should_process_file(self, file_path: Path) -> bool:
         """Check if file should be processed based on extension and patterns."""
@@ -98,26 +122,12 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
         suffix = file_path.suffix.lower()
         return suffix in self.include_patterns
 
-    def _debounce_event(self, file_path: str) -> bool:
-        """Check if event should be processed based on debouncing logic."""
-        now = time.time()
-        last_time = self.last_events.get(file_path, 0)
 
-        if now - last_time < self.debounce_delay:
-            return False
-
-        self.last_events[file_path] = now
-
-        # Cleanup old entries to prevent memory leaks (keep entries < 1 hour old)
-        if len(self.last_events) > 1000:  # Only cleanup when dict gets large
-            cutoff_time = now - 3600  # 1 hour ago
-            self.last_events = {path: timestamp for path, timestamp in self.last_events.items()
-                               if timestamp > cutoff_time}
-
-        return True
 
     def _queue_event(self, path: Path, event_type: str, old_path: Optional[Path] = None):
         """Queue a file change event if it passes filters and debouncing."""
+        debug_log("queue_event_called", path=str(path), watchdog_event_type=event_type, queue_available=self.event_queue is not None)
+
         # Enhanced diagnostic logging for debugging
         import sys
         import os
@@ -130,6 +140,7 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
 
         if self.event_queue is None:
             logger.warning(f"TIMING: Event queue not initialized, skipping {event_type} {path}")
+            debug_log("queue_event_no_queue", path=str(path))
             if os.environ.get("CHUNKHOUND_DEBUG"):
                 print("❌ EVENT QUEUE NOT INITIALIZED", file=sys.stderr)
                 print("==========================", file=sys.stderr)
@@ -144,49 +155,20 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
             return
 
         should_process = self._should_process_file(path)
+        debug_log("should_process_check", path=str(path), should_process=should_process, file_suffix=path.suffix)
+
         if os.environ.get("CHUNKHOUND_DEBUG"):
             print(f"Should Process File: {should_process}", file=sys.stderr)
         if not should_process:
+            debug_log("queue_event_rejected", path=str(path), reason="should_not_process")
             if os.environ.get("CHUNKHOUND_DEBUG"):
                 print("❌ FILE SHOULD NOT BE PROCESSED", file=sys.stderr)
                 print("==========================", file=sys.stderr)
             return
 
         path_str = str(path)
-        # Exempt deletion events from debounce to ensure immediate processing
-        # Rate limiting: only queue one event per file path
-        if event_type != 'deleted' and not self._debounce_event(path_str):
-            if os.environ.get("CHUNKHOUND_DEBUG"):
-                print("❌ EVENT DEBOUNCED", file=sys.stderr)
-                print("==========================", file=sys.stderr)
-            return
-
         event_timestamp = time.time()
 
-        # Check for duplicate event (Phase 2: Event Deduplication)
-        if path_str in self.recent_events:
-            last_event_type, last_time = self.recent_events[path_str]
-            if (event_type == last_event_type and
-                event_timestamp - last_time < 0.5):  # 500ms duplicate window
-                if os.environ.get("CHUNKHOUND_DEBUG"):
-                    print("❌ DUPLICATE EVENT FILTERED", file=sys.stderr)
-                    print("==========================", file=sys.stderr)
-                return
-
-        # Record event for deduplication tracking
-        self.recent_events[path_str] = (event_type, event_timestamp)
-
-        # Cleanup old deduplication entries
-        if len(self.recent_events) > 500:
-            cutoff_time = event_timestamp - 60  # Keep entries from last 1 minute
-            self.recent_events = {path: (event_type, timestamp) for path, (event_type, timestamp) in self.recent_events.items()
-                                 if timestamp > cutoff_time}
-
-        # Cleanup old atomic write tracking entries
-        if len(self.pending_atomic_writes) > 500:
-            cutoff_time = event_timestamp - 10  # Keep entries from last 10 seconds
-            self.pending_atomic_writes = {path: timestamp for path, timestamp in self.pending_atomic_writes.items()
-                                         if timestamp > cutoff_time}
         event = FileChangeEvent(
             path=path,
             event_type=event_type,
@@ -198,6 +180,8 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
         try:
             self.event_queue.put_nowait(event)
             logger.debug(f"TIMING: Event queued at {event_timestamp:.6f} - {event_type} {path}")
+            debug_log("event_queued_success", path=str(path), watchdog_event_type=event_type, queue_size=self.event_queue.qsize())
+
             if os.environ.get("CHUNKHOUND_DEBUG"):
                 print(f"✅ EVENT SUCCESSFULLY QUEUED", file=sys.stderr)
                 print(f"Queue Size After: {self.event_queue.qsize()}", file=sys.stderr)
@@ -205,33 +189,45 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
         except asyncio.QueueFull:
             # Queue is full, skip this event
             logger.warning(f"TIMING: Event queue full, skipping {event_type} {path} at {event_timestamp:.6f}")
+            debug_log("event_queue_full", path=str(path), watchdog_event_type=event_type)
+
             if os.environ.get("CHUNKHOUND_DEBUG"):
                 print("❌ EVENT QUEUE FULL", file=sys.stderr)
                 print("==========================", file=sys.stderr)
 
+    def on_any_event(self, event):
+        """Log all events for debugging - this should be called for EVERY event."""
+        debug_log("on_any_event_called",
+                 watchdog_event_type=event.event_type,
+                 path=str(event.src_path),
+                 is_directory=event.is_directory,
+                 has_dest_path=hasattr(event, 'dest_path'))
+
     def on_modified(self, event):
         """Handle file modification events."""
-        if not event.is_directory:
-            # Phase 3: Check if this is part of atomic write sequence
-            path_str = str(event.src_path)
-            if path_str in self.pending_atomic_writes:
-                creation_time = self.pending_atomic_writes[path_str]
-                if time.time() - creation_time < 1.0:  # Within 1s of creation
-                    logger.debug(f"TIMING: Skipping intermediate atomic write modification - {event.src_path}")
-                    return  # Skip this intermediate event
-                else:
-                    # Remove from pending if too old
-                    del self.pending_atomic_writes[path_str]
+        debug_log("on_modified_called",
+                 path=str(event.src_path),
+                 is_directory=event.is_directory,
+                 watchdog_event_type=getattr(event, 'event_type', 'unknown'))
 
+        if not event.is_directory:
+            path_str = str(event.src_path)
             logger.debug(f"TIMING: File modified detected at {time.time():.6f} - {event.src_path}")
+            debug_log("on_modified_calling_queue", path=path_str, watchdog_event_type="modified")
             self._queue_event(Path(event.src_path), 'modified')
 
     def on_created(self, event):
         """Handle file creation events."""
+        debug_log("on_created_called",
+                 path=str(event.src_path),
+                 is_directory=event.is_directory,
+                 watchdog_event_type=getattr(event, 'event_type', 'unknown'))
+
         if not event.is_directory:
-            # Phase 3: Track potential start of atomic write sequence
             path_str = str(event.src_path)
-            self.pending_atomic_writes[path_str] = time.time()
+            debug_log("on_created_processing",
+                     path=path_str,
+                     file_exists=Path(path_str).exists())
 
             # Diagnostic logging for file creation debugging
             import sys
@@ -241,8 +237,8 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
                 print(f"File: {event.src_path}", file=sys.stderr)
                 print(f"Timestamp: {time.time():.6f}", file=sys.stderr)
                 print(f"Is Directory: {event.is_directory}", file=sys.stderr)
-                print(f"Marked as potential atomic write", file=sys.stderr)
                 print("====================================", file=sys.stderr)
+            debug_log("on_created_calling_queue", path=path_str, watchdog_event_type="created")
             self._queue_event(Path(event.src_path), 'created')
 
     def on_moved(self, event):
@@ -260,8 +256,11 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         """Handle file deletion events."""
+        debug_log("on_deleted_called", path=str(event.src_path), is_directory=event.is_directory)
+
         if not event.is_directory:
             logger.debug(f"TIMING: File deleted detected at {time.time():.6f} - {event.src_path}")
+            debug_log("on_deleted_calling_queue", path=str(event.src_path), watchdog_event_type="deleted")
             self._queue_event(Path(event.src_path), 'deleted')
 
 
@@ -300,6 +299,12 @@ class FileWatcher:
     def start(self):
         """Start filesystem watching in a background thread."""
         if not WATCHDOG_AVAILABLE:
+            # Improved error reporting for missing watchdog
+            import sys
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("⚠️  WATCHDOG UNAVAILABLE: File modification detection disabled", file=sys.stderr)
+                print("   This means file changes will NOT be detected in real-time", file=sys.stderr)
+                print("   Install watchdog: pip install watchdog", file=sys.stderr)
             return False
 
         if self.is_watching:
@@ -313,15 +318,24 @@ class FileWatcher:
                 for watch_path in self.watch_paths:
                     if watch_path.exists() and watch_path.is_dir():
                         if self.observer is not None:
+                            debug_log("scheduling_watch",
+                                     path=str(watch_path),
+                                     recursive=True,
+                                     handler_methods=[m for m in dir(self.event_handler) if m.startswith('on_')])
                             self.observer.schedule(
                                 self.event_handler,
                                 str(watch_path),
                                 recursive=True
                             )
+                            debug_log("watch_scheduled", path=str(watch_path))
 
                 if self.observer is not None:
+                    debug_log("observer_starting",
+                             watch_paths=[str(p) for p in self.watch_paths],
+                             handler_type=type(self.event_handler).__name__)
                     self.observer.start()
                     self.is_watching = True
+                    debug_log("observer_started", is_alive=self.observer.is_alive())
                     return True
 
             return False
@@ -589,6 +603,15 @@ class FileWatcherManager:
             if WATCHDOG_AVAILABLE:
                 self.watcher = FileWatcher(self.watch_paths, self.event_queue)
                 self.watcher.start()
+            else:
+                # Log warning when watchdog is unavailable
+                import sys
+                import logging
+                logger = logging.getLogger(__name__)
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("⚠️  FileWatcherManager: watchdog library not available", file=sys.stderr)
+                    print("   File modification detection is DISABLED", file=sys.stderr)
+                    print("   Only initial file scanning will work", file=sys.stderr)
 
             # Start queue processing task
             self.processing_task = asyncio.create_task(
