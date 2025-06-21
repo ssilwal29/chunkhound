@@ -58,6 +58,11 @@ hiddenimports = [
     'mcp',
     'mcp.server',
     'mcp.server.fastmcp',
+    
+    # Required for MCP file monitoring
+    'watchdog',
+    'watchdog.observers',
+    'watchdog.events',
 ]
 
 # Minimal data files - only essential binaries
