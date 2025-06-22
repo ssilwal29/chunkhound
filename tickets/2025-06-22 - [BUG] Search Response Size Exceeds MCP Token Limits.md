@@ -51,7 +51,7 @@
 ## 2025-06-22T12:44:40+03:00
 Discovered during root cause analysis of regex pattern failures. Search with `def search_regex` pattern and limit=10 exceeded MCP token limits, highlighting systematic issue with response size management in both regex and semantic search tools.
 
-## 2025-06-22T19:15:00+03:00
+## 2025-06-22T19:15:00+03:00 - IMPLEMENTED
 **IMPLEMENTED** - Added comprehensive token limit management to MCP server:
 
 ### Changes Made:
@@ -76,4 +76,16 @@ Discovered during root cause analysis of regex pattern failures. Search with `de
 - **Fallback Safety**: Always returns at least one result even if oversized
 - **Metadata Headers**: Shows original vs returned result counts
 
-**Status**: Ready for rebuild and testing. Implementation addresses all requirements from the ticket.
+**VERIFIED**: Token limits working correctly - tested with various limits (25K, 5K, 1K tokens) and confirmed proper truncation behavior.
+
+## 2025-06-22T20:45:00+03:00 - TESTING COMPLETED
+**VERIFIED** - Comprehensive testing confirms token limit management works correctly:
+
+### Test Results:
+- **25K tokens**: Returns 50 results with code truncation (`is_truncated: true`)
+- **5K tokens**: Returns 10 results with aggressive truncation
+- **1K tokens**: Reduces to 4 results to stay under limit
+- **Headers**: Shows "TRUNCATED" with original vs returned counts
+- **Fail-safe**: Always returns at least 1 result even if oversized
+
+**Status**: COMPLETE - All requirements implemented and verified working.
