@@ -376,6 +376,80 @@ async def process_file_change(file_path: Path, event_type: str):
             print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
 
 
+def estimate_tokens(text: str) -> int:
+    """Estimate token count using simple heuristic (4 chars ≈ 1 token)."""
+    return len(text) // 4
+
+
+def truncate_code(code: str, max_chars: int = 1000) -> Tuple[str, bool]:
+    """Truncate code content with smart line breaking."""
+    if len(code) <= max_chars:
+        return code, False
+    
+    # Try to break at line boundaries
+    lines = code.split('\n')
+    truncated_lines = []
+    char_count = 0
+    
+    for line in lines:
+        if char_count + len(line) + 1 > max_chars:
+            break
+        truncated_lines.append(line)
+        char_count += len(line) + 1
+    
+    return '\n'.join(truncated_lines) + '\n...', True
+
+
+def optimize_search_results(results: List[Dict[str, Any]], max_tokens: int = 20000) -> Tuple[List[Dict[str, Any]], bool]:
+    """Optimize search results to fit within token limits."""
+    if not results:
+        return results, False
+    
+    # First pass: create optimized results with previews
+    optimized_results = []
+    total_tokens = 0
+    truncated = False
+    
+    for result in results:
+        # Create optimized result copy
+        opt_result = {
+            'chunk_id': result.get('chunk_id'),
+            'name': result.get('name', result.get('symbol', '')),
+            'chunk_type': result.get('chunk_type'),
+            'start_line': result.get('start_line'),
+            'end_line': result.get('end_line'),
+            'file_path': result.get('file_path'),
+            'language': result.get('language'),
+            'line_count': result.get('line_count')
+        }
+        
+        # Handle code content with truncation
+        original_code = result.get('content', result.get('code', ''))
+        if original_code:
+            code_preview, is_code_truncated = truncate_code(original_code)
+            opt_result['code'] = code_preview
+            if is_code_truncated:
+                opt_result['is_truncated'] = True
+                truncated = True
+        
+        # Estimate tokens for this result
+        result_json = json.dumps(opt_result, ensure_ascii=False)
+        result_tokens = estimate_tokens(result_json)
+        
+        # Check if adding this result would exceed limit
+        if total_tokens + result_tokens > max_tokens:
+            # If this is the first result and it's too big, include it anyway
+            if not optimized_results:
+                optimized_results.append(opt_result)
+                truncated = True
+            break
+        
+        optimized_results.append(opt_result)
+        total_tokens += result_tokens
+    
+    return optimized_results, truncated
+
+
 def convert_to_ndjson(results: List[Dict[str, Any]]) -> str:
     """Convert search results to NDJSON format."""
     lines = []
@@ -398,6 +472,7 @@ async def call_tool(
     if name == "search_regex":
         pattern = arguments.get("pattern", "")
         limit = max(1, min(arguments.get("limit", 10), 100))
+        max_tokens = max(1000, min(arguments.get("max_response_tokens", 20000), 25000))
 
         try:
             # Check connection instead of forcing reconnection (fixes race condition)
@@ -407,13 +482,24 @@ async def call_tool(
                 _database.reconnect()
 
             results = _database.search_regex(pattern=pattern, limit=limit)
-            return [types.TextContent(type="text", text=convert_to_ndjson(results))]
+            optimized_results, was_truncated = optimize_search_results(results, max_tokens)
+            
+            # Add metadata about truncation
+            if was_truncated:
+                response_text = f"# TRUNCATED: Results optimized to fit {max_tokens} token limit\n"
+                response_text += f"# Original results: {len(results)}, Returned: {len(optimized_results)}\n"
+                response_text += convert_to_ndjson(optimized_results)
+            else:
+                response_text = convert_to_ndjson(optimized_results)
+            
+            return [types.TextContent(type="text", text=response_text)]
         except Exception as e:
             raise Exception(f"Search failed: {str(e)}")
 
     elif name == "search_semantic":
         query = arguments.get("query", "")
         limit = max(1, min(arguments.get("limit", 10), 100))
+        max_tokens = max(1000, min(arguments.get("max_response_tokens", 20000), 25000))
         provider = arguments.get("provider", "openai")
         model = arguments.get("model", "text-embedding-3-small")
         threshold = arguments.get("threshold")
@@ -447,7 +533,17 @@ async def call_tool(
                     threshold=threshold
                 )
 
-                return [types.TextContent(type="text", text=convert_to_ndjson(results))]
+                optimized_results, was_truncated = optimize_search_results(results, max_tokens)
+                
+                # Add metadata about truncation
+                if was_truncated:
+                    response_text = f"# TRUNCATED: Results optimized to fit {max_tokens} token limit\n"
+                    response_text += f"# Original results: {len(results)}, Returned: {len(optimized_results)}\n"
+                    response_text += convert_to_ndjson(optimized_results)
+                else:
+                    response_text = convert_to_ndjson(optimized_results)
+
+                return [types.TextContent(type="text", text=response_text)]
 
             except asyncio.TimeoutError:
                 # Handle MCP timeout gracefully with informative error
@@ -487,7 +583,8 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "Regular expression pattern to search for"},
-                    "limit": {"type": "integer", "description": "Maximum number of results to return (1-100)", "default": 10}
+                    "limit": {"type": "integer", "description": "Maximum number of results to return (1-100)", "default": 10},
+                    "max_response_tokens": {"type": "integer", "description": "Maximum response size in tokens (1000-25000)", "default": 20000}
                 },
                 "required": ["pattern"]
             }
@@ -500,6 +597,7 @@ async def list_tools() -> list[types.Tool]:
                 "properties": {
                     "query": {"type": "string", "description": "Natural language search query"},
                     "limit": {"type": "integer", "description": "Maximum number of results to return (1-100)", "default": 10},
+                    "max_response_tokens": {"type": "integer", "description": "Maximum response size in tokens (1000-25000)", "default": 20000},
                     "provider": {"type": "string", "description": "Embedding provider to use", "default": "openai"},
                     "model": {"type": "string", "description": "Embedding model to use", "default": "text-embedding-3-small"},
                     "threshold": {"type": "number", "description": "Distance threshold for filtering results (optional)"}
