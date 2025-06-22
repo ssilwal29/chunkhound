@@ -15,8 +15,4 @@ ChunkHound is a semantic and regex search tool for codebases that provides MCP (
 - CLI wrapper and MCP launcher at root level
 - Real-time file watching with debouncing for incremental updates
 - Test files for modification and creation verification
-
-## Current Development Status
-- File watcher has recent enhancements for atomic write detection and debouncing
-- Transaction isolation improvements for embedding generation
-- **CRITICAL ISSUE**: Real-time file watching completely broken (see bugs/2025-06-21)
+- `<project dir>/tickets` contains project tickets
