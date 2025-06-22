@@ -153,10 +153,44 @@ class IndexingCoordinator(BaseService):
             if not chunks:
                 return {"status": "no_chunks", "chunks": 0}
 
+            # Check if this is an existing file that has been modified BEFORE storing the record
+            existing_file = self._db.get_file_by_path(str(file_path))
+            is_file_modified = False
+            
+            if existing_file:
+                # Check if file was actually modified (different mtime)
+                # Use same field resolution logic as process_file_incremental
+                existing_mtime = 0
+                current_mtime = file_stat.st_mtime
+                
+                if isinstance(existing_file, dict):
+                    # Try different possible timestamp field names
+                    for field in ['mtime', 'modified_time', 'modification_time', 'timestamp']:
+                        if field in existing_file and existing_file[field] is not None:
+                            timestamp_value = existing_file[field]
+                            if isinstance(timestamp_value, (int, float)):
+                                existing_mtime = float(timestamp_value)
+                                break
+                            elif hasattr(timestamp_value, "timestamp"):
+                                existing_mtime = timestamp_value.timestamp()
+                                break
+                else:
+                    # Handle File model objects
+                    if hasattr(existing_file, 'mtime'):
+                        existing_mtime = float(existing_file.mtime)
+                
+                is_file_modified = abs(current_mtime - existing_mtime) > 0.001  # Allow small float precision differences
+                logger.debug(f"File modification check: {file_path} - existing_mtime: {existing_mtime}, current_mtime: {current_mtime}, modified: {is_file_modified}")
+
             # Store or update file record
             file_id = self._store_file_record(file_path, file_stat, language)
             if file_id is None:
                 return {"status": "error", "chunks": 0, "error": "Failed to store file record"}
+
+            # Delete old chunks only if file was actually modified
+            if existing_file and is_file_modified:
+                self._db.delete_file_chunks(file_id)
+                logger.debug(f"Deleted existing chunks for modified file: {file_path}")
 
             # Store chunks and generate embeddings
             # Note: Transaction safety is handled by the database provider layer
