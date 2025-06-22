@@ -242,3 +242,6 @@ chunkhound-cli-dist/
 chunkhound-cli
 chunkhound-cli-fast
 debug_test_file.py
+
+# Claude
+.claude/settings.local.json
