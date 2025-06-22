@@ -41,7 +41,7 @@ try:
     from .signal_coordinator import SignalCoordinator
     from .file_watcher import FileWatcherManager
     from .core.config import EmbeddingConfig, EmbeddingProviderFactory
-    from .registry import configure_registry
+    from .registry import configure_registry, get_registry
 except ImportError:
     # Handle running as standalone script or PyInstaller binary
     from chunkhound.database import Database
@@ -49,7 +49,7 @@ except ImportError:
     from chunkhound.signal_coordinator import SignalCoordinator
     from chunkhound.file_watcher import FileWatcherManager
     from chunkhound.core.config import EmbeddingConfig, EmbeddingProviderFactory
-    from registry import configure_registry
+    from registry import configure_registry, get_registry
 
 # Global database, embedding manager, and file watcher instances
 # Global state management
@@ -244,21 +244,36 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 from chunkhound.file_watcher import WATCHDOG_AVAILABLE
             
             if not WATCHDOG_AVAILABLE:
-                if "CHUNKHOUND_DEBUG" in os.environ:
-                    print("⚠️  MCP SERVER WARNING: watchdog library not available!", file=sys.stderr)
-                    print("   File modification detection is DISABLED", file=sys.stderr)
-                    print("   File creation/deletion will work, but modifications will be missed", file=sys.stderr)
-                    print("   To fix: ensure watchdog is included in binary build", file=sys.stderr)
+                # FAIL FAST: watchdog is required for real-time file watching
+                error_msg = (
+                    "FATAL: watchdog library not available - real-time file watching disabled.\n"
+                    "This causes silent failures where file modifications are missed.\n"
+                    "Install watchdog: pip install watchdog>=4.0.0"
+                )
+                print(f"❌ MCP SERVER ERROR: {error_msg}", file=sys.stderr)
+                raise ImportError(error_msg)
             
-            await _file_watcher.initialize(process_file_change)
+            watcher_success = await _file_watcher.initialize(process_file_change)
+            if not watcher_success:
+                # FAIL FAST: file watcher initialization failed
+                error_msg = (
+                    "FATAL: File watcher initialization failed - real-time monitoring disabled.\n"
+                    "This causes silent failures where file modifications are missed.\n"
+                    "Check watch paths configuration and filesystem permissions."
+                )
+                print(f"❌ MCP SERVER ERROR: {error_msg}", file=sys.stderr)
+                raise RuntimeError(error_msg)
+            
             if "CHUNKHOUND_DEBUG" in os.environ:
                 print("Server lifespan: File watcher initialized successfully", file=sys.stderr)
         except Exception as fw_error:
-            # Log failure but continue - MCP server will run without filesystem watching
+            # FAIL FAST: Any file watcher error should crash the server
+            error_msg = f"FATAL: File watcher initialization failed: {fw_error}"
+            print(f"❌ MCP SERVER ERROR: {error_msg}", file=sys.stderr)
             if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"Server lifespan: File watcher initialization failed (non-critical): {fw_error}", file=sys.stderr)
                 import traceback
                 traceback.print_exc(file=sys.stderr)
+            raise RuntimeError(error_msg)
 
         if "CHUNKHOUND_DEBUG" in os.environ:
             print("Server lifespan: All components initialized successfully", file=sys.stderr)
@@ -351,6 +366,8 @@ async def process_file_change(file_path: Path, event_type: str):
 
                 # Use incremental processing for 10-100x performance improvement
                 await _database.process_file_incremental(file_path=file_path)
+                
+                # Transaction already committed by IndexingCoordinator with backup/rollback safety
     except Exception as e:
         # Log the exception instead of silently handling it
         if "CHUNKHOUND_DEBUG" in os.environ:
