@@ -8,11 +8,7 @@ Enable AI assistants to search your code with natural language and regex pattern
 
 ### Python Package
 ```bash
-# Install with uv (recommended)
 uv tool install chunkhound
-
-# Or with pip
-pip install chunkhound
 ```
 
 ### Binary
@@ -21,11 +17,14 @@ Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - 
 ## Quick Start
 
 ```bash
-# Index your codebase
-chunkhound run .
+# Set your OpenAI API key
+export OPENAI_API_KEY="sk-your-key-here"
 
-# Start MCP server for AI assistants
-chunkhound mcp
+# Index your codebase first
+uv run chunkhound run .
+
+# Start MCP server for AI assistants (watches for file changes and updates index)
+uv run chunkhound mcp
 ```
 
 ## AI Assistant Setup
@@ -36,8 +35,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "chunkhound": {
-      "command": "chunkhound",
-      "args": ["mcp"],
+      "command": "uv",
+      "args": ["run", "chunkhound", "mcp"],
       "env": {
         "OPENAI_API_KEY": "sk-your-key-here"
       }
@@ -52,8 +51,8 @@ Add to `.vscode/mcp.json` in your project:
 {
   "servers": {
     "chunkhound": {
-      "command": "chunkhound",
-      "args": ["mcp"]
+      "command": "uv",
+      "args": ["run", "chunkhound", "mcp"]
     }
   }
 }
@@ -64,8 +63,8 @@ Add to `.cursor/mcp.json` in your project:
 ```json
 {
   "chunkhound": {
-    "command": "chunkhound",
-    "args": ["mcp"]
+    "command": "uv",
+    "args": ["run", "chunkhound", "mcp"]
   }
 }
 ```
@@ -120,7 +119,7 @@ export CHUNKHOUND_EMBEDDING_MODEL="text-embedding-3-small"
 
 *Built completely by a language model with human supervision.*
 
-ChunkHound was assembled by an AI coding agent in two weeks through a self-improving process: design → code → test → review → commit. The agent even used ChunkHound to search its own code while building it.
+ChunkHound was assembled by an AI coding agent in under three weeks through a self-improving process: design → code → test → review → commit. The agent even used ChunkHound to search its own code while building it.
 
 ## License
 
