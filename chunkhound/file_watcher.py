@@ -606,8 +606,6 @@ class FileWatcherManager:
             else:
                 # Log warning when watchdog is unavailable
                 import sys
-                import logging
-                logger = logging.getLogger(__name__)
                 if "CHUNKHOUND_DEBUG" in os.environ:
                     print("⚠️  FileWatcherManager: watchdog library not available", file=sys.stderr)
                     print("   File modification detection is DISABLED", file=sys.stderr)
