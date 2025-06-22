@@ -1,49 +1,37 @@
 # ChunkHound
 
-**Semantic and Regex search for your projects via MCP.**
+**Semantic and Regex search for your codebase via MCP.**
 
-*Built completely by a language model with human supervision.*
+Enable AI assistants to search your code with natural language and regex patterns.
 
-# How ChunkHound Was Born
+## Installation
 
-In May 2025 an LLM coding agent assembled the first working version of ChunkHound in about two weeks. Development ran through a repeatable set of prompt‑"stations":
-- **Persistent memory** — each step wrote notes for the next.
+### Python Package
+```bash
+# Install with uv (recommended)
+uv tool install chunkhound
 
-- **Pipeline of “stations”** — design → code → test → review → commit, one or more prompts per task.
+# Or with pip
+pip install chunkhound
+```
 
-- **Self‑indexing feedback loop** — once basic indexing worked, the agent queried its own repo using ChunkHound and refined the code.
-
-- **Autonomous QA via [MCP](https://modelcontextprotocol.io)** — scripted searches exercised the API and revealed bugs.
-
-All code and docs, including this README, were generated this way; the human role was limited to approval, review and steering the project in the right direction.
+### Binary
+Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - zero dependencies required.
 
 ## Quick Start
 
 ```bash
-# Install (after PyPI release)
-pip install chunkhound
-
-# Or install with uv
-uv add chunkhound
-
-# Index your code
+# Index your codebase
 chunkhound run .
 
-# Start search server for AI assistants
+# Start MCP server for AI assistants
 chunkhound mcp
 ```
 
-That's it! Your code is now searchable by AI assistants.
-
-## What It Does
-
-- **Indexes your code** - Finds functions, classes, and methods automatically
-- **Regex search** - Find exact patterns like `def.*async`
-- **Semantic search** - Ask questions like "How do I connect to the database?"
-- **Works with AI assistants** - Claude, Cursor, VS Code, etc.
-- **Multi-language support** - Python, Java, C#, TypeScript, JavaScript, and Markdown
-
 ## AI Assistant Setup
+
+### Claude Desktop
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
@@ -51,52 +39,88 @@ That's it! Your code is now searchable by AI assistants.
       "command": "chunkhound",
       "args": ["mcp"],
       "env": {
-        "OPENAI_API_KEY": "your-openai-key-here"
+        "OPENAI_API_KEY": "sk-your-key-here"
       }
     }
   }
 }
 ```
 
-## How It Works
+### VS Code
+Add to `.vscode/mcp.json` in your project:
+```json
+{
+  "servers": {
+    "chunkhound": {
+      "command": "chunkhound",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
-1. **Scan** - ChunkHound reads your Python, Java, C#, TypeScript, JavaScript, and Markdown files
-2. **Parse** - Extracts functions, classes, methods using tree-sitter
-3. **Index** - Stores code chunks in a local database
-4. **Embed** - Creates AI embeddings for semantic search (optional)
-5. **Search** - AI assistants can now search your code
+### Cursor
+Add to `.cursor/mcp.json` in your project:
+```json
+{
+  "chunkhound": {
+    "command": "chunkhound",
+    "args": ["mcp"]
+  }
+}
+```
 
-## Requirements
+## What You Get
 
-- **Python Package**: Python 3.10+
-- **Standalone Binary**: No requirements (zero dependencies)
-- OpenAI API key (optional, for semantic search)
-- Works on macOS and Linux
+- **Semantic search** - "Find database connection code"
+- **Regex search** - Find exact patterns like `async def.*error`
+- **Code context** - AI assistants understand your codebase structure
+- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Markdown
 
 ## Language Support
 
-ChunkHound provides comprehensive parsing and indexing with **tree-sitter** for accurate syntax analysis:
+| Language | Extensions | Extracted Elements |
+|----------|------------|-------------------|
+| **Python** | `.py` | Functions, classes, methods, async functions |
+| **Java** | `.java` | Classes, methods, interfaces, constructors |
+| **C#** | `.cs` | Classes, methods, interfaces, properties |
+| **TypeScript** | `.ts`, `.tsx` | Functions, classes, interfaces, React components |
+| **JavaScript** | `.js`, `.jsx` | Functions, classes, React components |
+| **Markdown** | `.md` | Headers, code blocks, documentation |
 
-### Supported Languages
+## Configuration
 
-| Language | Extensions | Extracted Elements | Status |
-|----------|------------|-------------------|---------|
-| **Python** | `.py` | Functions, classes, methods, decorators, async functions | ✅ Full |
-| **Java** | `.java` | Classes, methods, interfaces, packages, constructors | ✅ Full |
-| **C#** | `.cs` | Classes, methods, interfaces, namespaces, properties, events | ✅ Full |
-| **TypeScript** | `.ts`, `.tsx` | Functions, classes, interfaces, types, enums, React components | ✅ Full |
-| **JavaScript** | `.js`, `.jsx`, `.mjs`, `.cjs` | Functions, classes, modules, React components, arrow functions | ✅ Full |
-| **Markdown** | `.md` | Headers, code blocks, structured content, documentation | ✅ Full |
+### Environment Variables
+```bash
+# Required for semantic search
+export OPENAI_API_KEY="sk-your-key-here"
 
-### Advanced Features
+# Optional: Database location
+export CHUNKHOUND_DB_PATH="/path/to/chunkhound.db"
 
-- **Tree-sitter parsing** - Accurate syntax analysis with proper AST generation
-- **Incremental parsing** - Only reparse changed files for fast updates
-- **Symbol extraction** - Precise code structure with scope and context
-- **Cross-language search** - Find patterns across all supported file types
-- **React/JSX support** - Full component and hook extraction
-- **Async/await patterns** - Modern JavaScript and Python async code
-- **Generics support** - TypeScript and C# generic type extraction
+# Optional: Custom embedding model
+export CHUNKHOUND_EMBEDDING_MODEL="text-embedding-3-small"
+```
+
+## Requirements
+
+- **Python**: 3.10+
+- **OpenAI API key**: Required for semantic search (regex works without)
+- **Platforms**: macOS, Linux
+
+## How It Works
+
+1. **Scan** - Finds code files in your project
+2. **Parse** - Extracts functions, classes, methods using tree-sitter
+3. **Index** - Stores code chunks in local SQLite database
+4. **Embed** - Creates AI embeddings for semantic search
+5. **Search** - AI assistants query via MCP protocol
+
+## Origin Story
+
+*Built completely by a language model with human supervision.*
+
+ChunkHound was assembled by an AI coding agent in two weeks through a self-improving process: design → code → test → review → commit. The agent even used ChunkHound to search its own code while building it.
 
 ## License
 
