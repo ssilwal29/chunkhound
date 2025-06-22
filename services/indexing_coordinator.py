@@ -124,23 +124,14 @@ class IndexingCoordinator(BaseService):
             if not parser:
                 return {"status": "error", "error": f"No parser available for {language}", "chunks": 0}
 
-            # Check if file needs processing (compare mtime)
+            # Get file stats for storage/update operations
             file_stat = file_path.stat()
-            existing_file = self._db.get_file_by_path(str(file_path))
 
             logger.debug(f"Processing file: {file_path}")
-            logger.debug(f"File exists in DB: {existing_file is not None}")
             logger.debug(f"File stat: mtime={file_stat.st_mtime}, size={file_stat.st_size}")
 
-            # Check if file exists in database and is up to date (using 1.0s tolerance)
-            if existing_file and self._is_file_up_to_date(existing_file, file_stat.st_mtime):
-                # Get current chunk count for status report
-                file_id = self._extract_file_id(existing_file)
-                if file_id is not None:
-                    chunks_count = len(self._db.get_chunks_by_file_id(file_id))
-                    return {"status": "up_to_date", "chunks": chunks_count, "file_id": file_id}
-                else:
-                    return {"status": "up_to_date", "chunks": 0}
+            # Note: Removed timestamp checking logic - if IndexingCoordinator.process_file() 
+            # was called, the file needs processing. File watcher handles change detection.
 
             # Parse file content - can return ParseResult or List[Dict[str, Any]]
             parsed_data = parser.parse_file(file_path)
@@ -167,26 +158,12 @@ class IndexingCoordinator(BaseService):
             if file_id is None:
                 return {"status": "error", "chunks": 0, "error": "Failed to store file record"}
 
-            # Use transaction-safe processing for file modifications
-            if existing_file:
-                existing_id = self._extract_file_id(existing_file)
-                if existing_id is not None:
-                    # Use transaction-safe modification processing
-                    chunk_ids, embeddings_generated = await self._process_file_modification_safe(
-                        existing_id, file_path, file_stat, chunks, language, skip_embeddings
-                    )
-                else:
-                    # Store chunks normally for new files
-                    chunk_ids = self._store_chunks(file_id, chunks, language)
-                    embeddings_generated = 0
-                    if not skip_embeddings and self._embedding_provider and chunk_ids:
-                        embeddings_generated = await self._generate_embeddings(chunk_ids, chunks)
-            else:
-                # Store chunks normally for new files
-                chunk_ids = self._store_chunks(file_id, chunks, language)
-                embeddings_generated = 0
-                if not skip_embeddings and self._embedding_provider and chunk_ids:
-                    embeddings_generated = await self._generate_embeddings(chunk_ids, chunks)
+            # Store chunks and generate embeddings
+            # Note: Transaction safety is handled by the database provider layer
+            chunk_ids = self._store_chunks(file_id, chunks, language)
+            embeddings_generated = 0
+            if not skip_embeddings and self._embedding_provider and chunk_ids:
+                embeddings_generated = await self._generate_embeddings(chunk_ids, chunks)
 
             result = {
                 "status": "success",
@@ -418,51 +395,6 @@ class IndexingCoordinator(BaseService):
         else:
             return None
 
-    def _is_file_up_to_date(self, existing_file: Union[Dict[str, Any], File], current_mtime: float) -> bool:
-        """Check if file is up to date based on modification time.
-
-        Uses a 1.0 second tolerance to account for filesystem timestamp variations.
-        """
-        # Debug logging for structure analysis
-        logger.debug(f"Existing file type: {type(existing_file)}")
-        logger.debug(f"Existing file keys: {existing_file.keys() if isinstance(existing_file, dict) else dir(existing_file)}")
-        logger.debug(f"Existing file mtime: {existing_file.get('mtime') if isinstance(existing_file, dict) else getattr(existing_file, 'mtime', None)}")
-        logger.debug(f"Current mtime: {current_mtime}")
-
-        try:
-            if isinstance(existing_file, File):
-                existing_mtime = existing_file.mtime
-            elif isinstance(existing_file, dict):
-                # Check for different timestamp field names
-                timestamp_field = None
-                for field in ['mtime', 'modified_time', 'modification_time', 'timestamp']:
-                    if field in existing_file:
-                        timestamp_field = field
-                        break
-
-                if not timestamp_field:
-                    logger.warning(f"No timestamp field found in existing_file dictionary: {list(existing_file.keys())}")
-                    return False
-
-                # Handle various timestamp formats
-                if isinstance(existing_file[timestamp_field], (int, float)):
-                    existing_mtime = float(existing_file[timestamp_field])
-                elif hasattr(existing_file[timestamp_field], "timestamp"):
-                    existing_mtime = existing_file[timestamp_field].timestamp()
-                else:
-                    existing_mtime = 0.0
-            else:
-                logger.warning(f"Unsupported existing_file type: {type(existing_file)}")
-                return False
-
-            # Use smaller tolerance (0.01 second) for development workflow
-            tolerance = 0.01  # Reduced from 0.1s to 0.01s to fix race condition with rapid edits
-            time_diff = abs(existing_mtime - current_mtime)
-            logger.debug(f"File timestamp comparison: diff={time_diff}, tolerance={tolerance}")
-            return time_diff < tolerance
-        except Exception as e:
-            logger.error(f"Error comparing file timestamps: {e}")
-            return False
 
     def _store_file_record(self, file_path: Path, file_stat: Any, language: Language) -> int:
         """Store or update file record in database."""

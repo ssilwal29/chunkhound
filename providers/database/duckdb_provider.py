@@ -1844,32 +1844,8 @@ class DuckDBProvider:
                         existing_mtime = 0.0
                         logger.debug(f"Incremental processing - No valid timestamp found, using default: {existing_mtime}")
 
-                    # Check if file is unchanged (use smaller tolerance for development workflow)
-                    time_diff = abs(existing_mtime - current_mtime)
-                    logger.debug(f"Incremental processing - Time difference: {time_diff} (tolerance: 0.01)")
-                    if time_diff < 0.01:  # Reduced from 0.1s to 0.01s to fix race condition with rapid edits
-                        # File is unchanged, get chunk count
-                        file_id = existing_file["id"]
-                        logger.debug(f"Incremental processing - File unchanged, retrieving chunk count for file_id: {file_id}")
-                        if self.connection is None:
-                            return {"status": "error", "error": "Database not connected"}
-                        chunks_count = self.connection.execute(
-                            "SELECT COUNT(*) FROM chunks WHERE file_id = ?",
-                            [file_id]
-                        ).fetchone()[0]
-                        logger.debug(f"Incremental processing - File unchanged, found {chunks_count} existing chunks")
-
-                        return {
-                            "status": "up_to_date",
-                            "file_id": file_id,
-                            "chunks": chunks_count,
-                            "chunks_unchanged": chunks_count,
-                            "chunks_inserted": 0,
-                            "chunks_deleted": 0,
-                            "chunk_ids": [],
-                            "embeddings": 0,
-                            "incremental": True
-                        }
+                    # Note: Removed timestamp checking logic - if process_file_incremental() was called,
+                    # the file needs processing. File watcher handles change detection.
 
             # Initialize services if needed
             if not hasattr(self, '_services_initialized') or not self._services_initialized:
