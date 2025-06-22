@@ -375,6 +375,30 @@ class ProviderRegistry:
             logger.error(f"Failed to create instance: {e}")
             raise
 
+    def begin_transaction(self) -> None:
+        """Begin transaction on registered database provider."""
+        database_provider = self.get_provider("database")
+        if hasattr(database_provider, 'begin_transaction'):
+            database_provider.begin_transaction()
+
+    def commit_transaction(self) -> None:
+        """Commit transaction on registered database provider."""
+        database_provider = self.get_provider("database")
+        if hasattr(database_provider, 'commit_transaction'):
+            database_provider.commit_transaction()
+        elif hasattr(database_provider, '_provider') and hasattr(database_provider._provider, '_connection'):
+            # Fallback for existing pattern
+            database_provider._provider._connection.commit()
+
+    def rollback_transaction(self) -> None:
+        """Rollback transaction on registered database provider."""
+        database_provider = self.get_provider("database")
+        if hasattr(database_provider, 'rollback_transaction'):
+            database_provider.rollback_transaction()
+        elif hasattr(database_provider, '_provider') and hasattr(database_provider._provider, '_connection'):
+            # Fallback for existing pattern
+            database_provider._provider._connection.rollback()
+
 
 # Global registry instance (lazy initialization)
 _registry = None
