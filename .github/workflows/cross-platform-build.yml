@@ -193,7 +193,7 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         uses: actions/cache@v3
         with:
-          path: ~/.cargo/bin/uv
+          path: ~/.local/bin/uv
           key: uv-binary-${{ runner.os }}-${{ runner.arch }}
 
       - name: Build macOS Binary (Native)
@@ -202,10 +202,10 @@ jobs:
           echo "🍎 Building macOS binary natively with caching..."
 
           # Install uv for fast dependency management (cached)
-          if [ ! -f ~/.cargo/bin/uv ]; then
+          if [ ! -f ~/.local/bin/uv ]; then
             curl -LsSf https://astral.sh/uv/install.sh | sh
           fi
-          export PATH="$HOME/.cargo/bin:$PATH"
+          export PATH="$HOME/.local/bin:$PATH"
 
           # Verify UV cache directory
           mkdir -p $UV_CACHE_DIR
