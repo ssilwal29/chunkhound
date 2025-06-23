@@ -58,9 +58,9 @@ class OpenAIEmbeddingProvider:
         
         # Model-specific configuration
         self._model_config = {
-            "text-embedding-3-small": {"dims": 1536, "distance": "cosine"},
-            "text-embedding-3-large": {"dims": 3072, "distance": "cosine"},
-            "text-embedding-ada-002": {"dims": 1536, "distance": "cosine"}
+            "text-embedding-3-small": {"dims": 1536, "distance": "cosine", "max_tokens": 8192},
+            "text-embedding-3-large": {"dims": 3072, "distance": "cosine", "max_tokens": 8192},
+            "text-embedding-ada-002": {"dims": 1536, "distance": "cosine", "max_tokens": 8192}
         }
         
         # Usage statistics
@@ -254,16 +254,48 @@ class OpenAIEmbeddingProvider:
         return embeddings[0] if embeddings else []
 
     async def embed_batch(self, texts: List[str], batch_size: Optional[int] = None) -> List[List[float]]:
-        """Generate embeddings in batches for optimal performance."""
+        """Generate embeddings in batches with token-aware sizing."""
         if not texts:
             return []
 
-        effective_batch_size = batch_size or self.batch_size
+        # Use token-aware batching
         all_embeddings = []
-
-        for i in range(0, len(texts), effective_batch_size):
-            batch = texts[i:i + effective_batch_size]
-            batch_embeddings = await self._embed_batch_internal(batch)
+        current_batch = []
+        current_tokens = 0
+        token_limit = self.get_model_token_limit() - 100  # Safety margin
+        
+        for text in texts:
+            # Handle individual texts that exceed token limit
+            text_tokens = self.estimate_tokens(text)
+            if text_tokens > token_limit:
+                # Process current batch if not empty
+                if current_batch:
+                    batch_embeddings = await self._embed_batch_internal(current_batch)
+                    all_embeddings.extend(batch_embeddings)
+                    current_batch = []
+                    current_tokens = 0
+                
+                # Split oversized text and process chunks
+                chunks = self.chunk_text_by_tokens(text, token_limit)
+                for chunk in chunks:
+                    chunk_embedding = await self._embed_batch_internal([chunk])
+                    all_embeddings.extend(chunk_embedding)
+                continue
+            
+            # Check if adding this text would exceed token limit
+            if current_tokens + text_tokens > token_limit and current_batch:
+                # Process current batch
+                batch_embeddings = await self._embed_batch_internal(current_batch)
+                all_embeddings.extend(batch_embeddings)
+                current_batch = []
+                current_tokens = 0
+            
+            current_batch.append(text)
+            current_tokens += text_tokens
+        
+        # Process remaining batch
+        if current_batch:
+            batch_embeddings = await self._embed_batch_internal(current_batch)
             all_embeddings.extend(batch_embeddings)
 
         return all_embeddings
@@ -361,6 +393,16 @@ class OpenAIEmbeddingProvider:
         """Estimate token count for a text."""
         # Simple estimation: ~4 characters per token for English text
         return max(1, len(text) // 4)
+    
+    def estimate_batch_tokens(self, texts: List[str]) -> int:
+        """Estimate total token count for a batch of texts."""
+        return sum(self.estimate_tokens(text) for text in texts)
+    
+    def get_model_token_limit(self) -> int:
+        """Get token limit for current model."""
+        if self._model in self._model_config:
+            return self._model_config[self._model]["max_tokens"]
+        return 8192  # Default limit
 
     def chunk_text_by_tokens(self, text: str, max_tokens: int) -> List[str]:
         """Split text into chunks by token count."""
