@@ -64,7 +64,7 @@ jobs:
             artifact_path: dist/chunkhound-optimized
 
           - platform: windows
-            os: windows-2025
+            os: windows-latest
             binary_name: chunkhound-windows-amd64
             docker_target: "" # Native build
             artifact_path: dist/chunkhound-optimized
@@ -181,11 +181,10 @@ jobs:
       # macOS: Native build with official setup-uv action
       - name: Set up uv (macOS)
         if: startsWith(matrix.platform, 'macos')
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v5
         with:
           version: "0.7.13"
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
 
       - name: Build macOS Binary (Native)
         if: startsWith(matrix.platform, 'macos')
@@ -221,11 +220,10 @@ jobs:
       # Windows: Native build with official setup-uv action
       - name: Set up uv (Windows)
         if: matrix.platform == 'windows'
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v5
         with:
           version: "0.7.13"
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
 
       - name: Build Windows Binary (Native)
         if: matrix.platform == 'windows'
