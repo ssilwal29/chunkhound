@@ -181,10 +181,12 @@ export CHUNKHOUND_BASE_URL="http://localhost:11434"
 
 1. **Scan** - Finds code files in your project
 2. **Parse** - Extracts functions, classes, methods using tree-sitter
-3. **Index** - Stores code chunks in local SQLite database
+3. **Index** - Stores code chunks in local DuckDB database
 4. **Embed** - Creates AI embeddings for semantic search
 5. **Watch** - MCP server automatically monitors files for changes and re-indexes
 6. **Search** - AI assistants query via MCP protocol
+
+*Note: ChunkHound currently uses DuckDB. Support for other local and remote databases is planned.*
 
 ## Origin Story
 

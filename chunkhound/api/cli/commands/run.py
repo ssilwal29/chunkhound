@@ -1,6 +1,7 @@
 """Run command module - handles directory indexing and file watching operations."""
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -363,9 +364,62 @@ async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, form
     """
     formatter.info("🔍 Starting file watching mode...")
 
-    # TODO: Implement proper watch_directory method in FileWatcherManager
-    formatter.warning("File watching mode not yet implemented in service layer")
-    formatter.info("File watching will be available in a future update")
+    try:
+        # Import file watcher components
+        from chunkhound.file_watcher import FileWatcherManager, WATCHDOG_AVAILABLE
+        
+        if not WATCHDOG_AVAILABLE:
+            formatter.error("❌ File watching requires the 'watchdog' package. Install with: pip install watchdog")
+            return
+            
+        # Initialize file watcher
+        file_watcher_manager = FileWatcherManager()
+        
+        # Create callback for file changes
+        async def process_cli_file_change(file_path: Path, event_type: str):
+            """Process file changes in CLI mode."""
+            try:
+                if event_type == 'deleted':
+                    removed_chunks = await indexing_coordinator.remove_file(str(file_path))
+                    if removed_chunks > 0:
+                        formatter.info(f"🗑️  Removed {removed_chunks} chunks from deleted file: {file_path}")
+                else:
+                    # Process file (created, modified, moved)
+                    if file_path.exists() and file_path.is_file():
+                        result = await indexing_coordinator.process_file(file_path)
+                        if result["status"] == "success":
+                            formatter.info(f"📝 Processed {event_type} file: {file_path} ({result['chunks']} chunks)")
+                        elif result["status"] not in ["skipped", "no_content", "no_chunks"]:
+                            formatter.warning(f"⚠️  Failed to process {event_type} file: {file_path} - {result.get('error', 'unknown error')}")
+            except Exception as e:
+                formatter.error(f"❌ Error processing {event_type} for {file_path}: {e}")
+        
+        # Initialize file watcher with callback
+        watch_paths = [args.path] if args.path.is_dir() else [args.path.parent]
+        watcher_success = await file_watcher_manager.initialize(
+            process_cli_file_change,
+            watch_paths=watch_paths
+        )
+        
+        if not watcher_success:
+            formatter.error("❌ Failed to initialize file watcher")
+            return
+            
+        formatter.success("✅ File watching started. Press Ctrl+C to stop.")
+        
+        # Keep watching until interrupted
+        try:
+            while True:
+                await asyncio.sleep(1.0)
+        except KeyboardInterrupt:
+            formatter.info("🛑 File watching stopped by user")
+        finally:
+            await file_watcher_manager.cleanup()
+            
+    except ImportError as e:
+        formatter.error(f"❌ Failed to import file watching components: {e}")
+    except Exception as e:
+        formatter.error(f"❌ File watching failed: {e}")
 
 
 __all__ = ["run_command"]
