@@ -1863,10 +1863,8 @@ class DuckDBProvider:
 
             # Delegate to IndexingCoordinator for processing
             logger.debug(f"Incremental processing - Delegating to IndexingCoordinator: {file_path}")
-            logger.info(f"SEMANTIC_DEBUG: process_file_incremental calling IndexingCoordinator with skip_embeddings=False for {file_path}")
             result = await self._indexing_coordinator.process_file(file_path, skip_embeddings=False)
             logger.debug(f"Incremental processing - IndexingCoordinator result: {result.get('status', 'unknown')}")
-            logger.info(f"SEMANTIC_DEBUG: IndexingCoordinator returned - status: {result.get('status')}, chunks: {result.get('chunks', 0)}, embeddings: {result.get('embeddings', 0)}")
 
             # Transform result to match incremental processing API
             if result.get("status") == "success":

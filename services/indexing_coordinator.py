@@ -552,11 +552,7 @@ class IndexingCoordinator(BaseService):
 
     async def _generate_embeddings(self, chunk_ids: List[int], chunks: List[Dict[str, Any]], connection=None) -> int:
         """Generate embeddings for chunks."""
-        logger.info(f"SEMANTIC_DEBUG: _generate_embeddings called for {len(chunk_ids)} chunks")
-        logger.info(f"SEMANTIC_DEBUG: embedding_provider available: {self._embedding_provider is not None}")
-
         if not self._embedding_provider:
-            logger.info(f"SEMANTIC_DEBUG: No embedding provider - returning 0")
             return 0
 
         try:
@@ -580,11 +576,9 @@ class IndexingCoordinator(BaseService):
             # Database storage - use provided connection for transaction context
             result = self._db.insert_embeddings_batch(embeddings_data, connection=connection)
 
-            logger.info(f"SEMANTIC_DEBUG: Successfully generated {result} embeddings")
             return result
 
         except Exception as e:
-            logger.error(f"SEMANTIC_DEBUG: Failed to generate embeddings: {e}")
             logger.error(f"Failed to generate embeddings: {e}")
             return 0
 
