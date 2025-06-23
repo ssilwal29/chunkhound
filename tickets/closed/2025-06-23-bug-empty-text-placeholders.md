@@ -2,8 +2,8 @@
 
 **Date**: 2025-06-23  
 **Priority**: Medium  
-**Status**: Open  
-**Files**: `providers/embeddings/openai_provider.py`
+**Status**: Closed  
+**Files**: `providers/embeddings/openai_provider.py`, `services/indexing_coordinator.py`
 
 ## Problem
 
@@ -34,7 +34,15 @@ Improve text validation upstream:
 
 ## Acceptance Criteria
 
-- [ ] Reduce frequency of empty text placeholders
-- [ ] Filter empty text chunks before embedding validation
-- [ ] Maintain embedding quality for valid content
-- [ ] Add monitoring for empty text patterns
+- [x] Reduce frequency of empty text placeholders
+- [x] Filter empty text chunks before embedding validation
+- [x] Maintain embedding quality for valid content
+- [x] Add monitoring for empty text patterns
+
+## Resolution
+
+Fixed by adding pre-embedding filtering in `services/indexing_coordinator.py:_generate_embeddings()`:
+- Filter empty text chunks before sending to embedding provider
+- Added metrics logging for empty chunk counts
+- Prevents OpenAI provider from creating `[EMPTY]` placeholders
+- Maintains embedding quality for valid content only

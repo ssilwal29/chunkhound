@@ -139,17 +139,20 @@ class IndexingCoordinator(BaseService):
                 return {"status": "no_content", "chunks": 0}
 
             # Extract chunks from ParseResult object or direct list
-            chunks: List[Dict[str, Any]]
+            raw_chunks: List[Dict[str, Any]]
             if isinstance(parsed_data, ParseResult):
                 # New parser providers return ParseResult object
-                chunks = parsed_data.chunks
+                raw_chunks = parsed_data.chunks
             elif isinstance(parsed_data, list):
-                # Legacy parsers return chunks directly
-                chunks = parsed_data
+                # Legacy parsers return chunks directly  
+                raw_chunks = parsed_data
             else:
                 # Fallback for unexpected types
-                chunks = []
+                raw_chunks = []
 
+            # Filter empty chunks early to reduce storage warnings
+            chunks = self._filter_valid_chunks(raw_chunks)
+            
             if not chunks:
                 return {"status": "no_chunks", "chunks": 0}
 
@@ -451,16 +454,28 @@ class IndexingCoordinator(BaseService):
         )
         return self._db.insert_file(file_model)
 
+    def _filter_valid_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter out chunks with empty content early in the process."""
+        valid_chunks = []
+        filtered_count = 0
+        
+        for chunk in chunks:
+            code_content = chunk.get("code", "")
+            if code_content and code_content.strip():
+                valid_chunks.append(chunk)
+            else:
+                filtered_count += 1
+        
+        # Log summary instead of individual warnings to reduce noise
+        if filtered_count > 0:
+            logger.debug(f"Filtered {filtered_count} empty chunks during parsing")
+            
+        return valid_chunks
+
     def _store_chunks(self, file_id: int, chunks: List[Dict[str, Any]], language: Language) -> List[int]:
         """Store chunks in database and return chunk IDs."""
         chunk_ids = []
         for chunk in chunks:
-            # Skip chunks with empty code content to prevent validation errors
-            code_content = chunk.get("code", "")
-            if not code_content or not code_content.strip():
-                logger.warning(f"Skipping chunk with empty code content: {chunk.get('symbol', 'unknown')} at lines {chunk.get('start_line', 0)}-{chunk.get('end_line', 0)}")
-                continue
-
             # Create Chunk model instance
             from core.models import Chunk
             from core.types import ChunkType
@@ -477,7 +492,7 @@ class IndexingCoordinator(BaseService):
                 symbol=chunk.get("symbol", ""),
                 start_line=chunk.get("start_line", 0),
                 end_line=chunk.get("end_line", 0),
-                code=code_content,
+                code=chunk.get("code", ""),
                 chunk_type=chunk_type_enum,
                 language=language,  # Use the file's detected language
                 parent_header=chunk.get("parent_header")
@@ -556,15 +571,35 @@ class IndexingCoordinator(BaseService):
             return 0
 
         try:
-            # Extract text content for embedding
-            texts = [chunk.get("code", "") for chunk in chunks]
+            # Filter out chunks with empty text content before embedding
+            valid_chunk_data = []
+            empty_count = 0
+            for chunk_id, chunk in zip(chunk_ids, chunks):
+                text = chunk.get("code", "").strip()
+                if text:  # Only include chunks with actual content
+                    valid_chunk_data.append((chunk_id, chunk, text))
+                else:
+                    empty_count += 1
+            
+            # Log metrics for empty chunks
+            if empty_count > 0:
+                logger.info(f"Filtered {empty_count} empty text chunks before embedding generation")
+            
+            if not valid_chunk_data:
+                logger.debug("No valid chunks with text content for embedding generation")
+                return 0
+                
+            # Extract data for embedding generation
+            valid_chunk_ids = [chunk_id for chunk_id, _, _ in valid_chunk_data]
+            valid_chunks = [chunk for _, chunk, _ in valid_chunk_data]
+            texts = [text for _, _, text in valid_chunk_data]
 
             # Generate embeddings
             embedding_results = await self._embedding_provider.embed(texts)
 
             # Store embeddings in database
             embeddings_data = []
-            for chunk_id, vector in zip(chunk_ids, embedding_results):
+            for chunk_id, vector in zip(valid_chunk_ids, embedding_results):
                 embeddings_data.append({
                     "chunk_id": chunk_id,
                     "provider": self._embedding_provider.name,

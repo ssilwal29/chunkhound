@@ -348,8 +348,11 @@ async def _generate_missing_embeddings(indexing_coordinator, formatter: OutputFo
 
     if embed_result["status"] == "success":
         formatter.success(f"Generated {embed_result['generated']} missing embeddings")
-    elif embed_result["status"] == "up_to_date":
-        formatter.info("All embeddings up to date")
+    elif embed_result["status"] in ["up_to_date", "complete"]:
+        if embed_result.get("message"):
+            formatter.success(embed_result["message"])
+        else:
+            formatter.info("All embeddings up to date")
     else:
         formatter.warning(f"Embedding generation failed: {embed_result}")
 
