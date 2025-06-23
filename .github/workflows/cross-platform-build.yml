@@ -193,7 +193,9 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         uses: actions/cache@v3
         with:
-          path: ~/.local/bin/uv
+          path: |
+            ~/.local/bin/uv
+            ~/.cargo/bin/uv
           key: uv-binary-${{ runner.os }}-${{ runner.arch }}
 
       - name: Build macOS Binary (Native)
@@ -202,18 +204,28 @@ jobs:
           echo "🍎 Building macOS binary natively with caching..."
 
           # Install uv for fast dependency management (cached)
-          if [ ! -f ~/.local/bin/uv ]; then
+          if [ ! -f ~/.local/bin/uv ] && [ ! -f ~/.cargo/bin/uv ]; then
             echo "Installing UV..."
+            echo "Architecture: $(uname -m)"
+            echo "OS: $(uname -s)"
             curl -LsSf https://astral.sh/uv/install.sh | sh
             echo "UV installation completed"
+            
+            # Check where UV was actually installed
+            echo "Searching for UV binary..."
+            find ~ -name "uv" -type f 2>/dev/null || echo "UV binary not found"
+            ls -la ~/.local/bin/ 2>/dev/null || echo "~/.local/bin/ does not exist"
+            ls -la ~/.cargo/bin/ 2>/dev/null || echo "~/.cargo/bin/ does not exist"
           fi
-          export PATH="$HOME/.local/bin:$PATH"
+          
+          # Set PATH with both potential locations
+          export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
           
           # Debug: Check UV installation
           echo "Checking UV installation..."
-          ls -la ~/.local/bin/ || echo "~/.local/bin/ does not exist"
-          which uv || echo "UV not found in PATH"
           echo "PATH: $PATH"
+          which uv || echo "UV not found in PATH"
+          uv --version || echo "UV version check failed"
 
           # Verify UV cache directory
           mkdir -p $UV_CACHE_DIR
