@@ -10,6 +10,8 @@ from loguru import logger
 from core.exceptions.core import ValidationError
 from interfaces.embedding_provider import EmbeddingConfig
 
+from .batch_utils import handle_token_limit_error, with_openai_token_handling
+
 try:
     import openai
     OPENAI_AVAILABLE = True
@@ -348,50 +350,17 @@ class OpenAIEmbeddingProvider:
                     # Handle token limit exceeded errors
                     error_message = str(rate_error)
                     if "maximum context length" in error_message and "tokens" in error_message:
-                        if len(texts) > 1:
-                            # Calculate optimal number of splits based on token estimates
-                            total_tokens = self.estimate_batch_tokens(texts)
-                            token_limit = self.get_model_token_limit() - 100  # Safety margin
-                            num_splits = max(2, (total_tokens + token_limit - 1) // token_limit)  # Ceiling division
-                            
-                            logger.warning(f"Token limit exceeded for batch of {len(texts)} texts ({total_tokens} tokens), splitting into {num_splits} batches")
-                            
-                            # Split texts into optimal-sized chunks
-                            chunk_size = len(texts) // num_splits
-                            remainder = len(texts) % num_splits
-                            
-                            all_embeddings = []
-                            start_idx = 0
-                            
-                            for i in range(num_splits):
-                                # Distribute remainder across first chunks
-                                current_chunk_size = chunk_size + (1 if i < remainder else 0)
-                                end_idx = start_idx + current_chunk_size
-                                chunk_texts = texts[start_idx:end_idx]
-                                
-                                if chunk_texts:
-                                    chunk_embeddings = await self._embed_batch_internal(chunk_texts)
-                                    all_embeddings.extend(chunk_embeddings)
-                                
-                                start_idx = end_idx
-                            
-                            return all_embeddings
-                        else:
-                            # Single text is too large, chunk it by tokens
-                            text = texts[0]
-                            text_tokens = self.estimate_tokens(text)
-                            token_limit = self.get_model_token_limit() - 100  # Safety margin
-                            
-                            logger.warning(f"Single text too large ({text_tokens} tokens), chunking by token limit")
-                            chunks = self.chunk_text_by_tokens(text, token_limit)
-                            
-                            if len(chunks) == 1:
-                                # Text can't be split further, raise error
-                                raise ValidationError("text", text, f"Text too large to embed even after chunking: {len(text)} chars")
-                            
-                            # Return embedding of first chunk as representative
-                            chunk_embeddings = await self._embed_batch_internal([chunks[0]])
-                            return chunk_embeddings
+                        total_tokens = self.estimate_batch_tokens(texts)
+                        token_limit = self.get_model_token_limit() - 100  # Safety margin
+
+                        return await handle_token_limit_error(
+                            texts=texts,
+                            total_tokens=total_tokens,
+                            token_limit=token_limit,
+                            embed_function=self._embed_batch_internal,
+                            chunk_text_function=self.chunk_text_by_tokens,
+                            single_text_fallback=True
+                        )
                     else:
                         raise
                 elif openai and hasattr(openai, 'APITimeoutError') and isinstance(rate_error, (openai.APITimeoutError, openai.APIConnectionError)):
@@ -419,6 +388,37 @@ class OpenAIEmbeddingProvider:
                     raise
 
         raise RuntimeError(f"Failed to generate embeddings after {self._retry_attempts} attempts")
+
+    @with_openai_token_handling()
+    async def _embed_batch_simple(self, texts: list[str]) -> list[list[float]]:
+        """Simplified embedding method using the token limit decorator.
+        
+        This demonstrates how future providers can use the decorator approach.
+        """
+        if not self._client:
+            raise RuntimeError("OpenAI client not initialized")
+
+        logger.debug(f"Generating embeddings for {len(texts)} texts")
+
+        response = await self._client.embeddings.create(
+            model=self.model,
+            input=texts,
+            timeout=self._timeout
+        )
+
+        # Extract embeddings from response
+        embeddings = []
+        for data in response.data:
+            embeddings.append(data.embedding)
+
+        # Update usage statistics
+        self._usage_stats["requests_made"] += 1
+        self._usage_stats["embeddings_generated"] += len(embeddings)
+        if hasattr(response, 'usage') and response.usage:
+            self._usage_stats["tokens_used"] += response.usage.total_tokens
+
+        logger.debug(f"Successfully generated {len(embeddings)} embeddings")
+        return embeddings
 
     def validate_texts(self, texts: list[str]) -> list[str]:
         """Validate and preprocess texts before embedding."""
