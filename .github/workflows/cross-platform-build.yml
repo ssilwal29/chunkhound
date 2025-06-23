@@ -63,6 +63,12 @@ jobs:
             docker_target: ubuntu-builder
             artifact_path: dist/chunkhound-optimized
 
+          - platform: windows
+            os: windows-latest
+            binary_name: chunkhound-windows-amd64
+            docker_target: "" # Native build
+            artifact_path: dist/chunkhound-optimized
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -232,48 +238,98 @@ jobs:
             exit 1
           fi
 
-      - name: Test Binary Performance
+      # Windows: Native build with minimal setup
+      - name: Build Windows Binary (Native)
+        if: matrix.platform == 'windows'
+        shell: powershell
         run: |
-          echo "⚡ Testing binary performance..."
+          Write-Host "🪟 Building Windows binary..."
 
-          # Create performance results directory
-          mkdir -p ./performance-results
+          # Install uv
+          Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1" | Invoke-Expression
+          $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
 
-          # Verify binary exists and is executable
-          if [ ! -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-            echo "❌ Binary not found for performance testing"
+          # Install dependencies
+          uv sync --no-dev
+
+          # Install PyInstaller
+          uv add --dev pyinstaller
+
+          # Build binary
+          uv run pyinstaller chunkhound-optimized.spec --clean --noconfirm --workpath .\build --distpath .\dist
+
+          # Create zip archive
+          Compress-Archive -Path "dist\chunkhound-optimized" -DestinationPath "dist\${{ matrix.binary_name }}.zip" -Force
+
+          # Verify binary
+          $binaryPath = ".\dist\chunkhound-optimized\chunkhound-optimized.exe"
+          if (Test-Path $binaryPath) {
+            & $binaryPath --version
+          } else {
+            Write-Host "❌ Binary not found"
             exit 1
-          fi
+          }
+
+      - name: Test Binary Performance (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          Write-Host "⚡ Testing Windows binary performance..."
           
-          # Ensure binary is executable
-          chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+          # Create performance results directory
+          New-Item -ItemType Directory -Force -Path "performance-results" | Out-Null
+          
+          # Test Windows binary
+          $binaryPath = "dist\chunkhound-optimized\chunkhound-optimized.exe"
+          & $binaryPath --version | Tee-Object -FilePath "performance-results\version-info.txt"
+          
+          # Simple performance summary for Windows
+          "Performance Summary for Windows:" | Out-File -FilePath "performance-results\summary.txt"
+          "Binary tested successfully" | Out-File -Append -FilePath "performance-results\summary.txt"
 
-          # Startup time test with measurements
-          echo "Testing startup time..."
-          for i in {1..5}; do
-            echo "Run $i:"
-            { time ./dist/chunkhound-optimized/chunkhound-optimized --help > /dev/null; } 2>> ./performance-results/startup-times.txt
-          done
+      - name: Test Binary Performance (Unix)
+        if: matrix.platform != 'windows'
+        run: |
+            echo "⚡ Testing binary performance..."
 
-          # Binary size analysis
-          echo "Binary size analysis:"
-          ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | tee ./performance-results/binary-size.txt
-          du -sh ./dist/chunkhound-optimized/ | tee -a ./performance-results/binary-size.txt
+            # Create performance results directory
+            mkdir -p ./performance-results
 
-          # Archive size
-          ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | tee -a ./performance-results/binary-size.txt
+            # Verify binary exists and is executable
+            if [ ! -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
+              echo "❌ Binary not found for performance testing"
+              exit 1
+            fi
+            
+            # Ensure binary is executable
+            chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
 
-          # Basic functionality test
-          echo "Testing basic functionality..."
-          ./dist/chunkhound-optimized/chunkhound-optimized --version | tee ./performance-results/version-info.txt
-          ./dist/chunkhound-optimized/chunkhound-optimized config --help > /dev/null
+            # Startup time test with measurements
+            echo "Testing startup time..."
+            for i in {1..5}; do
+              echo "Run $i:"
+              { time ./dist/chunkhound-optimized/chunkhound-optimized --help > /dev/null; } 2>> ./performance-results/startup-times.txt
+            done
 
-          # Performance summary
-          echo "Performance Summary for ${{ matrix.platform }}:" > ./performance-results/summary.txt
-          echo "================================" >> ./performance-results/summary.txt
-          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')" >> ./performance-results/summary.txt
-          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./performance-results/summary.txt
-          echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
+            # Binary size analysis
+            echo "Binary size analysis:"
+            ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | tee ./performance-results/binary-size.txt
+            du -sh ./dist/chunkhound-optimized/ | tee -a ./performance-results/binary-size.txt
+
+            # Archive size
+            ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | tee -a ./performance-results/binary-size.txt
+
+            # Basic functionality test
+            echo "Testing basic functionality..."
+            ./dist/chunkhound-optimized/chunkhound-optimized --version | tee ./performance-results/version-info.txt
+            ./dist/chunkhound-optimized/chunkhound-optimized config --help > /dev/null
+
+            # Performance summary
+            echo "Performance Summary for ${{ matrix.platform }}:" > ./performance-results/summary.txt
+            echo "================================" >> ./performance-results/summary.txt
+            echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')" >> ./performance-results/summary.txt
+            echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./performance-results/summary.txt
+            echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
 
       - name: Generate Build Info
         run: |
@@ -305,7 +361,20 @@ jobs:
             echo "No SHA256 utility found" >> ${{ matrix.binary_name }}.sha256
           fi
 
-      - name: Upload Binary Artifacts
+      - name: Upload Binary Artifacts (Windows)
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: |
+            dist/${{ matrix.binary_name }}.zip
+            dist/${{ matrix.binary_name }}.sha256
+            dist/BUILD_INFO_${{ matrix.platform }}.txt
+            performance-results/
+          retention-days: 30
+
+      - name: Upload Binary Artifacts (Unix)
+        if: matrix.platform != 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.binary_name }}
