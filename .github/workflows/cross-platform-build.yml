@@ -203,9 +203,17 @@ jobs:
 
           # Install uv for fast dependency management (cached)
           if [ ! -f ~/.local/bin/uv ]; then
+            echo "Installing UV..."
             curl -LsSf https://astral.sh/uv/install.sh | sh
+            echo "UV installation completed"
           fi
           export PATH="$HOME/.local/bin:$PATH"
+          
+          # Debug: Check UV installation
+          echo "Checking UV installation..."
+          ls -la ~/.local/bin/ || echo "~/.local/bin/ does not exist"
+          which uv || echo "UV not found in PATH"
+          echo "PATH: $PATH"
 
           # Verify UV cache directory
           mkdir -p $UV_CACHE_DIR
