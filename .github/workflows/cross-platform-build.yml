@@ -208,6 +208,13 @@ jobs:
             echo "Installing UV..."
             echo "Architecture: $(uname -m)"
             echo "OS: $(uname -s)"
+            echo "Full system info: $(uname -a)"
+            
+            # Set explicit install directory
+            export UV_INSTALL_DIR="$HOME/.local/bin"
+            mkdir -p "$UV_INSTALL_DIR"
+            
+            # Install UV with explicit path
             curl -LsSf https://astral.sh/uv/install.sh | sh
             echo "UV installation completed"
             
