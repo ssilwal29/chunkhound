@@ -110,33 +110,14 @@ class EmbeddingService(BaseService):
             target_provider = provider_name or self._embedding_provider.name
             target_model = model_name or self._embedding_provider.model
 
-            # Create a progress bar for the embedding generation process
-            with tqdm(total=3, desc=f"🧠 Embedding generation ({target_provider}/{target_model})", 
-                     unit="step", position=0, leave=False, dynamic_ncols=True) as pbar:
-                pbar.set_description_str(f"🧠 Checking for chunks without embeddings...")
-                
-                # First, just get the count and IDs of chunks without embeddings (fast query)
-                chunk_ids_without_embeddings = self._get_chunk_ids_without_embeddings(target_provider, target_model)
-                pbar.update(1)
+            # First, just get the count and IDs of chunks without embeddings (fast query)
+            chunk_ids_without_embeddings = self._get_chunk_ids_without_embeddings(target_provider, target_model)
 
-                if not chunk_ids_without_embeddings:
-                    pbar.set_description_str(f"✅ All chunks have embeddings")
-                    pbar.update(2)  # Complete the progress bar
-                    return {"status": "complete", "generated": 0, "message": "All chunks have embeddings"}
+            if not chunk_ids_without_embeddings:
+                return {"status": "complete", "generated": 0, "message": "All chunks have embeddings"}
 
-                pbar.set_description_str(f"🧠 Found {len(chunk_ids_without_embeddings)} chunks - generating embeddings...")
-                pbar.update(1)
-
-                # Disable outer progress bar during inner progress bar operation
-                pbar.disable = True
-                
-                # Generate embeddings in streaming fashion (loads chunk content in batches)
-                generated_count = await self._generate_embeddings_streaming(chunk_ids_without_embeddings)
-                
-                # Re-enable and complete outer progress bar
-                pbar.disable = False
-                pbar.update(1)
-                pbar.set_description_str(f"✅ Generated {generated_count} embeddings")
+            # Generate embeddings in streaming fashion (loads chunk content in batches)
+            generated_count = await self._generate_embeddings_streaming(chunk_ids_without_embeddings)
 
             return {
                 "status": "success",
