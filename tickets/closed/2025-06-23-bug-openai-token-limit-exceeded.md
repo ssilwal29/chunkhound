@@ -1,54 +1,17 @@
-# [BUG] OpenAI Embedding Token Limit Exceeded
+# 2025-06-23 - [BUG] OpenAI Token Limit Exceeded
+**Priority**: High
 
-**Date**: 2025-06-23  
-**Priority**: High  
-**Status**: Completed  
-**Files**: `providers/embeddings/openai_provider.py`
+`BadRequestError` with "maximum context length exceeded" when batches contain too many tokens for OpenAI's 8,192 token limit.
 
-## Problem
+# History
 
-OpenAI API rejects embedding requests due to token limit:
-```
-ERROR | Failed to generate embeddings: Error code: 400 - {'error': {'message': "This model's maximum context length is 8192 tokens, however you requested 29854 tokens (29854 in your prompt; 0 for the completion). Please reduce your prompt; or completion length.", 'type': 'invalid_request_error', 'param': None, 'code': None}}
-```
+## 2025-06-23-1
+Initial fix: Added token-aware batching and model configuration. Issue partially resolved but used inefficient half-splitting on errors.
 
-## Root Cause
-
-From codebase analysis:
-1. `text-embedding-3-small` model has 8,192 token limit
-2. Current batching sends 29,854+ tokens in single request
-3. No token counting or batch size adjustment based on token limits
-4. Large code chunks cause batch to exceed limits
-
-## Solution
-
-Implement token-aware batching:
-- Add token counting before API requests
-- Implement dynamic batch sizing based on token limits
-- Split large individual chunks that exceed limits
-- Add retry logic with smaller batches
-
-## Technical Details
-
-- Model: `text-embedding-3-small` (8,192 token limit)
-- Current batch_size: 100 items
-- Need: Token-based batching instead of item-based
-
-## Acceptance Criteria
-
-- [x] No token limit exceeded errors
-- [x] Dynamic batch sizing based on token count
-- [x] Handle individual chunks that exceed token limits
-- [x] Maintain embedding generation throughput
-- [x] Add token limit configuration per model
-
-## Solution Implemented
-
-Fixed token limit issue in `providers/embeddings/openai_provider.py`:
-
-1. **Token-aware batching**: Added `estimate_batch_tokens()` and `get_model_token_limit()` methods
-2. **Dynamic batch sizing**: Modified `embed_batch()` to respect 8,192 token limit with safety margin
-3. **Oversized chunk handling**: Automatically splits individual texts exceeding token limits
-4. **Model configuration**: Added `max_tokens` to model config for `text-embedding-3-small/large` and `ada-002`
-
-Tests pass, preventing token limit exceeded errors while maintaining throughput.
+## 2025-06-23-2
+Improved error handling in `_embed_batch_internal()`:
+- Added `BadRequestError` detection for token limit exceeded
+- Implemented optimal token-based splitting: `(total_tokens + limit - 1) // limit`
+- Distributes texts evenly across calculated number of batches
+- Single-text chunking for oversized individual texts
+- All tests pass, no more token limit errors
