@@ -32,7 +32,7 @@ is_ticket_closed() {
     fi
     
     # Look for Status line and check if it's closed
-    if grep -q "^\*\*Status\*\*:\s*\(FIXED\|Fixed\|Done\|WONTFIX\)" "$file"; then
+    if grep -q "^\*\*Status\*\*:\s*\(FIXED\|Fixed\|Done\|WONTFIX\|Closed\)" "$file"; then
         return 0
     fi
     
