@@ -2,7 +2,8 @@
 
 import asyncio
 import os
-from typing import List, Optional, Dict, Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from loguru import logger
 
@@ -20,17 +21,17 @@ except ImportError:
 
 class OpenAIEmbeddingProvider:
     """OpenAI embedding provider using text-embedding-3-small by default."""
-    
+
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         model: str = "text-embedding-3-small",
         batch_size: int = 100,
         timeout: int = 30,
         retry_attempts: int = 3,
         retry_delay: float = 1.0,
-        max_tokens: Optional[int] = None
+        max_tokens: int | None = None
     ):
         """Initialize OpenAI embedding provider.
         
@@ -46,7 +47,7 @@ class OpenAIEmbeddingProvider:
         """
         if not OPENAI_AVAILABLE:
             raise ImportError("OpenAI package not available. Install with: uv pip install openai")
-        
+
         self._api_key = api_key or os.getenv("OPENAI_API_KEY")
         self._base_url = base_url or os.getenv("OPENAI_BASE_URL")
         self._model = model
@@ -55,14 +56,14 @@ class OpenAIEmbeddingProvider:
         self._retry_attempts = retry_attempts
         self._retry_delay = retry_delay
         self._max_tokens = max_tokens
-        
+
         # Model-specific configuration
         self._model_config = {
             "text-embedding-3-small": {"dims": 1536, "distance": "cosine", "max_tokens": 8192},
             "text-embedding-3-large": {"dims": 3072, "distance": "cosine", "max_tokens": 8192},
             "text-embedding-ada-002": {"dims": 1536, "distance": "cosine", "max_tokens": 8192}
         }
-        
+
         # Usage statistics
         self._usage_stats = {
             "requests_made": 0,
@@ -70,7 +71,7 @@ class OpenAIEmbeddingProvider:
             "embeddings_generated": 0,
             "errors": 0
         }
-        
+
         # Initialize OpenAI client
         self._client = None
         self._initialize_client()
@@ -79,19 +80,19 @@ class OpenAIEmbeddingProvider:
         """Initialize the OpenAI client."""
         if not OPENAI_AVAILABLE or openai is None:
             raise RuntimeError("OpenAI library is not available. Install with: pip install openai")
-            
+
         if not self._api_key:
             raise ValueError("OpenAI API key is required")
-        
+
         # Configure client options for custom endpoints
         client_kwargs = {
             "api_key": self._api_key,
             "timeout": self._timeout
         }
-        
+
         if self._base_url:
             client_kwargs["base_url"] = self._base_url
-            
+
             # For internal/custom endpoints, add SSL handling options
             # This helps with self-signed certificates and internal CAs
             try:
@@ -102,7 +103,7 @@ class OpenAIEmbeddingProvider:
                     logger.debug(f"Using permissive SSL for internal endpoint: {self._base_url}")
             except ImportError:
                 logger.warning("httpx not available, using default SSL settings")
-        
+
         self._client = openai.AsyncOpenAI(**client_kwargs)
         logger.debug(f"OpenAI client initialized with base_url={self._base_url}, timeout={self._timeout}")
 
@@ -136,7 +137,7 @@ class OpenAIEmbeddingProvider:
         return self._batch_size
 
     @property
-    def max_tokens(self) -> Optional[int]:
+    def max_tokens(self) -> int | None:
         """Maximum tokens per request."""
         return self._max_tokens
 
@@ -158,7 +159,7 @@ class OpenAIEmbeddingProvider:
         )
 
     @property
-    def api_key(self) -> Optional[str]:
+    def api_key(self) -> str | None:
         """API key for authentication."""
         return self._api_key
 
@@ -181,7 +182,7 @@ class OpenAIEmbeddingProvider:
         """Initialize the embedding provider."""
         if not self._client:
             self._initialize_client()
-        
+
         # Validate API key with a test request
         await self.validate_api_key()
         logger.info(f"OpenAI embedding provider initialized with model {self.model}")
@@ -197,7 +198,7 @@ class OpenAIEmbeddingProvider:
         """Check if the provider is available and properly configured."""
         return OPENAI_AVAILABLE and self._api_key is not None and self._client is not None
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Perform health check and return status information."""
         status = {
             "provider": self.name,
@@ -229,13 +230,13 @@ class OpenAIEmbeddingProvider:
 
         return status
 
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a list of texts."""
         if not texts:
             return []
 
         validated_texts = self.validate_texts(texts)
-        
+
         try:
             # Use batch processing for optimal performance
             if len(validated_texts) <= self.batch_size:
@@ -248,12 +249,12 @@ class OpenAIEmbeddingProvider:
             logger.error(f"Failed to generate embeddings: {e}")
             raise
 
-    async def embed_single(self, text: str) -> List[float]:
+    async def embed_single(self, text: str) -> list[float]:
         """Generate embedding for a single text."""
         embeddings = await self.embed([text])
         return embeddings[0] if embeddings else []
 
-    async def embed_batch(self, texts: List[str], batch_size: Optional[int] = None) -> List[List[float]]:
+    async def embed_batch(self, texts: list[str], batch_size: int | None = None) -> list[list[float]]:
         """Generate embeddings in batches with token-aware sizing."""
         if not texts:
             return []
@@ -263,7 +264,7 @@ class OpenAIEmbeddingProvider:
         current_batch = []
         current_tokens = 0
         token_limit = self.get_model_token_limit() - 100  # Safety margin
-        
+
         for text in texts:
             # Handle individual texts that exceed token limit
             text_tokens = self.estimate_tokens(text)
@@ -274,14 +275,14 @@ class OpenAIEmbeddingProvider:
                     all_embeddings.extend(batch_embeddings)
                     current_batch = []
                     current_tokens = 0
-                
+
                 # Split oversized text and process chunks
                 chunks = self.chunk_text_by_tokens(text, token_limit)
                 for chunk in chunks:
                     chunk_embedding = await self._embed_batch_internal([chunk])
                     all_embeddings.extend(chunk_embedding)
                 continue
-            
+
             # Check if adding this text would exceed token limit
             if current_tokens + text_tokens > token_limit and current_batch:
                 # Process current batch
@@ -289,10 +290,10 @@ class OpenAIEmbeddingProvider:
                 all_embeddings.extend(batch_embeddings)
                 current_batch = []
                 current_tokens = 0
-            
+
             current_batch.append(text)
             current_tokens += text_tokens
-        
+
         # Process remaining batch
         if current_batch:
             batch_embeddings = await self._embed_batch_internal(current_batch)
@@ -300,13 +301,13 @@ class OpenAIEmbeddingProvider:
 
         return all_embeddings
 
-    async def embed_streaming(self, texts: List[str]) -> AsyncIterator[List[float]]:
+    async def embed_streaming(self, texts: list[str]) -> AsyncIterator[list[float]]:
         """Generate embeddings with streaming results."""
         for text in texts:
             embedding = await self.embed_single(text)
             yield embedding
 
-    async def _embed_batch_internal(self, texts: List[str]) -> List[List[float]]:
+    async def _embed_batch_internal(self, texts: list[str]) -> list[list[float]]:
         """Internal method to embed a batch of texts."""
         if not self._client:
             raise RuntimeError("OpenAI client not initialized")
@@ -314,7 +315,7 @@ class OpenAIEmbeddingProvider:
         for attempt in range(self._retry_attempts):
             try:
                 logger.debug(f"Generating embeddings for {len(texts)} texts (attempt {attempt + 1})")
-                
+
                 response = await self._client.embeddings.create(
                     model=self.model,
                     input=texts,
@@ -343,6 +344,56 @@ class OpenAIEmbeddingProvider:
                         continue
                     else:
                         raise
+                elif openai and hasattr(openai, 'BadRequestError') and isinstance(rate_error, openai.BadRequestError):
+                    # Handle token limit exceeded errors
+                    error_message = str(rate_error)
+                    if "maximum context length" in error_message and "tokens" in error_message:
+                        if len(texts) > 1:
+                            # Calculate optimal number of splits based on token estimates
+                            total_tokens = self.estimate_batch_tokens(texts)
+                            token_limit = self.get_model_token_limit() - 100  # Safety margin
+                            num_splits = max(2, (total_tokens + token_limit - 1) // token_limit)  # Ceiling division
+                            
+                            logger.warning(f"Token limit exceeded for batch of {len(texts)} texts ({total_tokens} tokens), splitting into {num_splits} batches")
+                            
+                            # Split texts into optimal-sized chunks
+                            chunk_size = len(texts) // num_splits
+                            remainder = len(texts) % num_splits
+                            
+                            all_embeddings = []
+                            start_idx = 0
+                            
+                            for i in range(num_splits):
+                                # Distribute remainder across first chunks
+                                current_chunk_size = chunk_size + (1 if i < remainder else 0)
+                                end_idx = start_idx + current_chunk_size
+                                chunk_texts = texts[start_idx:end_idx]
+                                
+                                if chunk_texts:
+                                    chunk_embeddings = await self._embed_batch_internal(chunk_texts)
+                                    all_embeddings.extend(chunk_embeddings)
+                                
+                                start_idx = end_idx
+                            
+                            return all_embeddings
+                        else:
+                            # Single text is too large, chunk it by tokens
+                            text = texts[0]
+                            text_tokens = self.estimate_tokens(text)
+                            token_limit = self.get_model_token_limit() - 100  # Safety margin
+                            
+                            logger.warning(f"Single text too large ({text_tokens} tokens), chunking by token limit")
+                            chunks = self.chunk_text_by_tokens(text, token_limit)
+                            
+                            if len(chunks) == 1:
+                                # Text can't be split further, raise error
+                                raise ValidationError("text", text, f"Text too large to embed even after chunking: {len(text)} chars")
+                            
+                            # Return embedding of first chunk as representative
+                            chunk_embeddings = await self._embed_batch_internal([chunks[0]])
+                            return chunk_embeddings
+                    else:
+                        raise
                 elif openai and hasattr(openai, 'APITimeoutError') and isinstance(rate_error, (openai.APITimeoutError, openai.APIConnectionError)):
                     # Log detailed connection error information
                     error_details = {
@@ -357,7 +408,7 @@ class OpenAIEmbeddingProvider:
                     if hasattr(rate_error, 'response'):
                         error_details["response_status"] = getattr(rate_error.response, 'status_code', None)
                         error_details["response_headers"] = dict(getattr(rate_error.response, 'headers', {}))
-                    
+
                     logger.warning(f"API connection error, retrying in {self._retry_delay} seconds: {error_details}")
                     if attempt < self._retry_attempts - 1:
                         await asyncio.sleep(self._retry_delay)
@@ -369,7 +420,7 @@ class OpenAIEmbeddingProvider:
 
         raise RuntimeError(f"Failed to generate embeddings after {self._retry_attempts} attempts")
 
-    def validate_texts(self, texts: List[str]) -> List[str]:
+    def validate_texts(self, texts: list[str]) -> list[str]:
         """Validate and preprocess texts before embedding."""
         if not texts:
             raise ValidationError("texts", texts, "No texts provided for embedding")
@@ -378,7 +429,7 @@ class OpenAIEmbeddingProvider:
         for i, text in enumerate(texts):
             if not isinstance(text, str):
                 raise ValidationError(f"texts[{i}]", text, f"Text at index {i} is not a string: {type(text)}")
-            
+
             if not text.strip():
                 logger.warning(f"Empty text at index {i}, using placeholder")
                 validated.append("[EMPTY]")
@@ -393,25 +444,25 @@ class OpenAIEmbeddingProvider:
         """Estimate token count for a text."""
         # Simple estimation: ~4 characters per token for English text
         return max(1, len(text) // 4)
-    
-    def estimate_batch_tokens(self, texts: List[str]) -> int:
+
+    def estimate_batch_tokens(self, texts: list[str]) -> int:
         """Estimate total token count for a batch of texts."""
         return sum(self.estimate_tokens(text) for text in texts)
-    
+
     def get_model_token_limit(self) -> int:
         """Get token limit for current model."""
         if self._model in self._model_config:
             return self._model_config[self._model]["max_tokens"]
         return 8192  # Default limit
 
-    def chunk_text_by_tokens(self, text: str, max_tokens: int) -> List[str]:
+    def chunk_text_by_tokens(self, text: str, max_tokens: int) -> list[str]:
         """Split text into chunks by token count."""
         if max_tokens <= 0:
             raise ValidationError("max_tokens", max_tokens, "max_tokens must be positive")
 
         # Simple character-based chunking (approximation)
         max_chars = max_tokens * 4
-        
+
         if len(text) <= max_chars:
             return [text]
 
@@ -422,7 +473,7 @@ class OpenAIEmbeddingProvider:
 
         return chunks
 
-    def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> dict[str, Any]:
         """Get information about the embedding model."""
         return {
             "provider": self.name,
@@ -434,7 +485,7 @@ class OpenAIEmbeddingProvider:
             "supported_models": list(self._model_config.keys())
         }
 
-    def get_usage_stats(self) -> Dict[str, Any]:
+    def get_usage_stats(self) -> dict[str, Any]:
         """Get usage statistics."""
         return self._usage_stats.copy()
 
@@ -468,7 +519,7 @@ class OpenAIEmbeddingProvider:
             self._base_url = kwargs["base_url"]
             self._initialize_client()
 
-    def get_supported_distances(self) -> List[str]:
+    def get_supported_distances(self) -> list[str]:
         """Get list of supported distance metrics."""
         return ["cosine", "l2", "ip"]  # OpenAI embeddings work with multiple metrics
 
@@ -493,7 +544,7 @@ class OpenAIEmbeddingProvider:
             logger.error(f"API key validation failed: {e}")
             return False
 
-    def get_rate_limits(self) -> Dict[str, Any]:
+    def get_rate_limits(self) -> dict[str, Any]:
         """Get rate limit information."""
         # OpenAI rate limits vary by model and tier
         return {
@@ -502,10 +553,11 @@ class OpenAIEmbeddingProvider:
             "note": "See OpenAI documentation for current limits"
         }
 
-    def get_request_headers(self) -> Dict[str, str]:
+    def get_request_headers(self) -> dict[str, str]:
         """Get headers for API requests."""
         return {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
             "User-Agent": "ChunkHound-OpenAI-Provider"
         }
+
