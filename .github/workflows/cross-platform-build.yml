@@ -247,7 +247,7 @@ jobs:
 
           # Install uv
           Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1" | Invoke-Expression
-          $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+          $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
 
           # Install dependencies
           uv sync --no-dev
