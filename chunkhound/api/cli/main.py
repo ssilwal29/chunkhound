@@ -19,7 +19,7 @@ if is_mcp_command():
     from pathlib import Path
 
     # Parse MCP arguments minimally
-    db_path = Path.home() / ".cache" / "chunkhound" / "chunks.duckdb"
+    db_path = Path("chunkhound.db")
     if "--db" in sys.argv:
         db_index = sys.argv.index("--db")
         if db_index + 1 < len(sys.argv):

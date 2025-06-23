@@ -143,7 +143,7 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
         log_environment_diagnostics()
 
         # Initialize database path
-        db_path = Path(os.environ.get("CHUNKHOUND_DB_PATH", Path.home() / ".cache" / "chunkhound" / "chunks.duckdb"))
+        db_path = Path(os.environ.get("CHUNKHOUND_DB_PATH", "chunkhound.db"))
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
         if "CHUNKHOUND_DEBUG" in os.environ:
