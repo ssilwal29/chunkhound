@@ -2,7 +2,6 @@
 ```
 # ISO-8601 - [BUG/FEATURE] Ticket Slug
 **Priority**: Urgent/High/Medium/Low
-**Status**: Open/Done/Blocked
 
 Description
 
