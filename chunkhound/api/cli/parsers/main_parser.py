@@ -77,9 +77,9 @@ def add_database_argument(parser: argparse.ArgumentParser, required: bool = Fals
     parser.add_argument(
         "--db",
         type=Path,
-        default=Path.home() / ".cache" / "chunkhound" / "chunks.duckdb",
+        default=Path("chunkhound.db"),
         required=required,
-        help="DuckDB database file path (default: ~/.cache/chunkhound/chunks.duckdb)",
+        help="DuckDB database file path (default: chunkhound.db)",
     )
 
 

@@ -21,7 +21,7 @@ def parse_arguments():
         "--db",
         type=str,
         help="Path to DuckDB database file",
-        default=str(Path.home() / ".cache" / "chunkhound" / "chunks.duckdb")
+        default="chunkhound.db"
     )
     parser.add_argument(
         "--watch-path",

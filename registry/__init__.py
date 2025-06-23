@@ -346,7 +346,7 @@ class ProviderRegistry:
             if hasattr(cls, '__name__'):
                 if 'DuckDBProvider' in cls.__name__:
                     # DuckDB provider needs db_path parameter and connection
-                    db_path = self._config.get('database', {}).get('path', '.chunkhound.db')
+                    db_path = self._config.get('database', {}).get('path', 'chunkhound.db')
                     instance = cls(db_path)
                     instance.connect()
                     return instance

@@ -55,8 +55,8 @@ def add_mcp_subparser(subparsers) -> argparse.ArgumentParser:
     mcp_parser.add_argument(
         "--db",
         type=Path,
-        default=Path.home() / ".cache" / "chunkhound" / "chunks.duckdb",
-        help="DuckDB database file path (default: ~/.cache/chunkhound/chunks.duckdb)",
+        default=Path("chunkhound.db"),
+        help="DuckDB database file path (default: chunkhound.db)",
     )
 
     return mcp_parser

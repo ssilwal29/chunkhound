@@ -20,17 +20,40 @@ Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - 
 # Set your OpenAI API key
 export OPENAI_API_KEY="sk-your-key-here"
 
-# Index your codebase first
+# Index your codebase first (creates chunkhound.db in current directory)
 uv run chunkhound run .
 
-# Start MCP server for AI assistants (watches for file changes and updates index)
+# OR: Index and watch for changes (standalone mode)
+uv run chunkhound run . --watch
+
+# Start MCP server for AI assistants (automatically watches for file changes)
 uv run chunkhound mcp
+
+# Use custom database location
+uv run chunkhound run . --db /path/to/my-chunks.db
+uv run chunkhound mcp --db /path/to/my-chunks.db
 ```
 
 ## AI Assistant Setup
 
 ### Claude Desktop
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "chunkhound": {
+      "command": "uv",
+      "args": ["run", "chunkhound", "mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+Add to `~/.claude.json`:
 ```json
 {
   "mcpServers": {
@@ -74,7 +97,7 @@ Add to `.cursor/mcp.json` in your project:
 - **Semantic search** - "Find database connection code"
 - **Regex search** - Find exact patterns like `async def.*error`
 - **Code context** - AI assistants understand your codebase structure
-- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Markdown
+- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Markdown, JSON, YAML
 
 ## Language Support
 
@@ -85,13 +108,57 @@ Add to `.cursor/mcp.json` in your project:
 | **C#** | `.cs` | Classes, methods, interfaces, properties |
 | **TypeScript** | `.ts`, `.tsx` | Functions, classes, interfaces, React components |
 | **JavaScript** | `.js`, `.jsx` | Functions, classes, React components |
-| **Markdown** | `.md` | Headers, code blocks, documentation |
+| **Markdown** | `.md`, `.markdown` | Headers, code blocks, documentation |
+| **JSON** | `.json` | Structure and data elements |
+| **YAML** | `.yaml`, `.yml` | Configuration and data elements |
+| **Text** | `.txt` | Plain text content |
+
+## Usage Modes
+
+ChunkHound operates in two main modes:
+
+1. **MCP Server Mode** (`chunkhound mcp`) - Recommended for AI assistants
+   - Automatically watches for file changes
+   - Responds to search queries via MCP protocol
+   - Runs continuously in background
+
+2. **Standalone Mode** (`chunkhound run`)
+   - One-time indexing: `chunkhound run .`
+   - Continuous watching: `chunkhound run . --watch`
+   - Direct CLI usage without MCP integration
 
 ## Configuration
 
+### Database Location
+
+By default, ChunkHound creates `chunkhound.db` in your current directory. You can customize this with:
+
+- **Command line**: `--db /path/to/my-chunks.db`
+- **Environment variable**: `CHUNKHOUND_DB_PATH="/path/to/chunkhound.db"`
+
+### Embedding Providers
+
+ChunkHound supports multiple embedding providers:
+
+**OpenAI (default)**:
+```bash
+export OPENAI_API_KEY="sk-your-key-here"
+uv run chunkhound run . --provider openai --model text-embedding-3-small
+```
+
+**OpenAI-compatible servers** (Ollama, LocalAI, etc.):
+```bash
+uv run chunkhound run . --provider openai-compatible --base-url http://localhost:11434 --model nomic-embed-text
+```
+
+**Text Embeddings Inference (TEI)**:
+```bash
+uv run chunkhound run . --provider tei --base-url http://localhost:8080
+```
+
 ### Environment Variables
 ```bash
-# Required for semantic search
+# Required for semantic search (OpenAI)
 export OPENAI_API_KEY="sk-your-key-here"
 
 # Optional: Database location
@@ -99,6 +166,9 @@ export CHUNKHOUND_DB_PATH="/path/to/chunkhound.db"
 
 # Optional: Custom embedding model
 export CHUNKHOUND_EMBEDDING_MODEL="text-embedding-3-small"
+
+# Optional: Custom base URL for compatible providers
+export CHUNKHOUND_BASE_URL="http://localhost:11434"
 ```
 
 ## Requirements
@@ -113,7 +183,8 @@ export CHUNKHOUND_EMBEDDING_MODEL="text-embedding-3-small"
 2. **Parse** - Extracts functions, classes, methods using tree-sitter
 3. **Index** - Stores code chunks in local SQLite database
 4. **Embed** - Creates AI embeddings for semantic search
-5. **Search** - AI assistants query via MCP protocol
+5. **Watch** - MCP server automatically monitors files for changes and re-indexes
+6. **Search** - AI assistants query via MCP protocol
 
 ## Origin Story
 
