@@ -272,11 +272,25 @@ class ProviderRegistry:
             logger.warning(f"Failed to register JavaScript parser: {e}")
 
         try:
+            self.register_language_parser(Language.JSX, JavaScriptParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered JSX parser")
+        except Exception as e:
+            logger.warning(f"Failed to register JSX parser: {e}")
+
+        try:
             self.register_language_parser(Language.TYPESCRIPT, TypeScriptParser)
             if not os.environ.get("CHUNKHOUND_MCP_MODE"):
                 logger.debug("Registered TypeScript parser")
         except Exception as e:
             logger.warning(f"Failed to register TypeScript parser: {e}")
+
+        try:
+            self.register_language_parser(Language.TSX, TypeScriptParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered TSX parser")
+        except Exception as e:
+            logger.warning(f"Failed to register TSX parser: {e}")
 
         try:
             self.register_language_parser(Language.CSHARP, CSharpParser)
