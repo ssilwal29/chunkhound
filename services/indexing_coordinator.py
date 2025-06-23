@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from fnmatch import fnmatch
 from loguru import logger
+from tqdm import tqdm
 
 from core.models import File
 from core.types import Language, FilePath, FileId
@@ -394,23 +395,49 @@ class IndexingCoordinator(BaseService):
             # First pass: process files without embeddings for batch optimization
             file_chunks_for_embedding = []
 
-            for file_path in files:
-                result = await self.process_file(file_path, skip_embeddings=True)
+            # Create progress bar for file processing
+            with tqdm(total=len(files), desc="Processing files", unit="file") as pbar:
+                for file_path in files:
+                    result = await self.process_file(file_path, skip_embeddings=True)
 
-                if result["status"] == "success":
-                    total_files += 1
-                    total_chunks += result["chunks"]
+                    if result["status"] == "success":
+                        total_files += 1
+                        total_chunks += result["chunks"]
 
-                    # Collect chunks for batch embedding generation
-                    if "chunk_data" in result:
-                        file_chunks_for_embedding.extend([
-                            (chunk_id, chunk_data)
-                            for chunk_id, chunk_data in zip(result["chunk_ids"], result["chunk_data"])
-                        ])
+                        # Collect chunks for batch embedding generation
+                        if "chunk_data" in result:
+                            file_chunks_for_embedding.extend([
+                                (chunk_id, chunk_data)
+                                for chunk_id, chunk_data in zip(result["chunk_ids"], result["chunk_data"])
+                            ])
+                        
+                        pbar.set_postfix_str(f"{total_chunks} chunks")
+                    elif result["status"] in ["skipped", "no_content", "no_chunks"]:
+                        # Still update progress for skipped files
+                        pass
+                    else:
+                        # Log errors but continue processing
+                        logger.warning(f"Failed to process {file_path}: {result.get('error', 'unknown error')}")
+                    
+                    pbar.update(1)
 
             # Second pass: generate embeddings in batches
             if self._embedding_provider and file_chunks_for_embedding:
-                total_embeddings = await self._generate_embeddings_batch(file_chunks_for_embedding)
+                print(f"\n🧠 Generating embeddings for {len(file_chunks_for_embedding)} chunks...")
+                
+                # Use EmbeddingService for progress tracking
+                from .embedding_service import EmbeddingService
+                embedding_service = EmbeddingService(
+                    database_provider=self._db,
+                    embedding_provider=self._embedding_provider
+                )
+                
+                # Extract chunk IDs and texts
+                chunk_ids = [chunk_id for chunk_id, _ in file_chunks_for_embedding]
+                chunk_texts = [chunk_data.get("code", "") for _, chunk_data in file_chunks_for_embedding]
+                
+                # Generate embeddings with progress tracking
+                total_embeddings = await embedding_service.generate_embeddings_for_chunks(chunk_ids, chunk_texts)
 
             return {
                 "status": "success",
@@ -594,7 +621,7 @@ class IndexingCoordinator(BaseService):
             valid_chunks = [chunk for _, chunk, _ in valid_chunk_data]
             texts = [text for _, _, text in valid_chunk_data]
 
-            # Generate embeddings
+            # Generate embeddings (progress tracking handled by missing embeddings phase)
             embedding_results = await self._embedding_provider.embed(texts)
 
             # Store embeddings in database

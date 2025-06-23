@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from loguru import logger
+from tqdm import tqdm
 
 from chunkhound import __version__
 from chunkhound.signal_coordinator import CLICoordinator

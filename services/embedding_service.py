@@ -3,6 +3,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
+from tqdm import tqdm
 
 from core.types import ChunkId
 from interfaces.database_provider import DatabaseProvider
@@ -47,13 +48,15 @@ class EmbeddingService(BaseService):
     async def generate_embeddings_for_chunks(
         self,
         chunk_ids: List[ChunkId],
-        chunk_texts: List[str]
+        chunk_texts: List[str],
+        show_progress: bool = True
     ) -> int:
         """Generate embeddings for a list of chunks.
 
         Args:
             chunk_ids: List of chunk IDs to generate embeddings for
             chunk_texts: Corresponding text content for each chunk
+            show_progress: Whether to show progress bar (default True)
 
         Returns:
             Number of embeddings successfully generated
@@ -76,7 +79,7 @@ class EmbeddingService(BaseService):
                 return 0
 
             # Generate embeddings in batches
-            total_generated = await self._generate_embeddings_in_batches(filtered_chunks)
+            total_generated = await self._generate_embeddings_in_batches(filtered_chunks, show_progress)
 
             logger.info(f"Successfully generated {total_generated} embeddings")
             return total_generated
@@ -109,20 +112,20 @@ class EmbeddingService(BaseService):
 
             logger.info(f"Generating missing embeddings for {target_provider}/{target_model}")
 
-            # Find chunks without embeddings
-            chunks_without_embeddings = self._get_chunks_without_embeddings(target_provider, target_model)
+            # Show progress message before the heavy database query
+            print(f"🧠 Checking for chunks without embeddings...")
 
-            if not chunks_without_embeddings:
+            # First, just get the count and IDs of chunks without embeddings (fast query)
+            chunk_ids_without_embeddings = self._get_chunk_ids_without_embeddings(target_provider, target_model)
+
+            if not chunk_ids_without_embeddings:
                 return {"status": "complete", "generated": 0, "message": "All chunks have embeddings"}
 
-            logger.info(f"Found {len(chunks_without_embeddings)} chunks without embeddings")
+            logger.info(f"Found {len(chunk_ids_without_embeddings)} chunks without embeddings")
+            print(f"🧠 Generating embeddings for {len(chunk_ids_without_embeddings)} chunks...")
 
-            # Extract chunk IDs and texts
-            chunk_ids = [chunk["id"] for chunk in chunks_without_embeddings]
-            chunk_texts = [chunk["code"] for chunk in chunks_without_embeddings]
-
-            # Generate embeddings
-            generated_count = await self.generate_embeddings_for_chunks(chunk_ids, chunk_texts)
+            # Generate embeddings in streaming fashion (loads chunk content in batches)
+            generated_count = await self._generate_embeddings_streaming(chunk_ids_without_embeddings)
 
             return {
                 "status": "success",
@@ -303,7 +306,8 @@ class EmbeddingService(BaseService):
 
     async def _generate_embeddings_in_batches(
         self,
-        chunk_data: List[Tuple[ChunkId, str]]
+        chunk_data: List[Tuple[ChunkId, str]],
+        show_progress: bool = True
     ) -> int:
         """Generate embeddings for chunks in optimized batches.
 
@@ -316,13 +320,11 @@ class EmbeddingService(BaseService):
         if not chunk_data:
             return 0
 
-        # Create batches for embedding API requests
-        batches = []
-        for i in range(0, len(chunk_data), self._embedding_batch_size):
-            batch = chunk_data[i:i + self._embedding_batch_size]
-            batches.append(batch)
+        # Create token-aware batches immediately (fast operation)
+        batches = self._create_token_aware_batches(chunk_data)
 
-        logger.info(f"Processing {len(batches)} batches with up to {self._embedding_batch_size} chunks each")
+        avg_batch_size = sum(len(batch) for batch in batches) / len(batches) if batches else 0
+        logger.info(f"Processing {len(batches)} token-aware batches (avg {avg_batch_size:.1f} chunks each)")
 
         # Process batches with concurrency control
         semaphore = asyncio.Semaphore(self._max_concurrent_batches)
@@ -367,9 +369,42 @@ class EmbeddingService(BaseService):
                     logger.error(f"Batch {batch_num + 1} failed: {e}")
                     return 0
 
-        # Execute all batches concurrently
-        tasks = [process_batch(batch, i) for i, batch in enumerate(batches)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Show progress bar only if requested
+        if show_progress:
+            # Temporarily suppress INFO logs during progress display
+            import sys
+            from loguru import logger as loguru_logger
+            
+            # Store current log level
+            log_handlers = list(loguru_logger._core.handlers.values())
+            
+            # Remove all handlers and add back with ERROR level
+            loguru_logger.remove()
+            loguru_logger.add(sys.stderr, level="ERROR")
+            
+            try:
+                with tqdm(total=len(chunk_data), desc="Generating embeddings", unit="chunk") as pbar:
+                    # Process batches with limited concurrency and progress tracking
+                    async def process_batch_with_progress(batch: List[Tuple[ChunkId, str]], batch_num: int) -> int:
+                        result = await process_batch(batch, batch_num)
+                        pbar.update(len(batch))  # Update progress by number of chunks processed
+                        return result
+                    
+                    # Create tasks with progress tracking
+                    tasks = [process_batch_with_progress(batch, i) for i, batch in enumerate(batches)]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                # Restore original logging configuration
+                loguru_logger.remove()
+                for handler in log_handlers:
+                    if hasattr(handler, 'levelno'):
+                        loguru_logger.add(sys.stderr, level=handler.levelno)
+                    else:
+                        loguru_logger.add(sys.stderr, level="DEBUG")
+        else:
+            # Process without progress bar
+            tasks = [process_batch(batch, i) for i, batch in enumerate(batches)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Count successful embeddings
         total_generated = 0
@@ -381,20 +416,39 @@ class EmbeddingService(BaseService):
 
         return total_generated
 
-    def _get_chunks_without_embeddings(self, provider: str, model: str) -> List[Dict[str, Any]]:
-        """Get chunks that don't have embeddings for the specified provider/model."""
+    def _create_token_aware_batches(self, chunk_data: List[Tuple[ChunkId, str]]) -> List[List[Tuple[ChunkId, str]]]:
+        """Create small batches to avoid token limits.
+        
+        Args:
+            chunk_data: List of (chunk_id, text) tuples
+            
+        Returns:
+            List of small batches
+        """
+        # Use very small batch size to avoid token issues entirely
+        SAFE_BATCH_SIZE = 10  # Very conservative - 10 chunks per batch
+        batches = []
+        
+        for i in range(0, len(chunk_data), SAFE_BATCH_SIZE):
+            batch = chunk_data[i:i + SAFE_BATCH_SIZE]
+            batches.append(batch)
+        
+        return batches
+
+    def _get_chunk_ids_without_embeddings(self, provider: str, model: str) -> List[ChunkId]:
+        """Get just the IDs of chunks that don't have embeddings (fast query)."""
         # Get all embedding tables
         embedding_tables = self._get_all_embedding_tables()
 
         if not embedding_tables:
-            # No embedding tables exist, return all chunks
+            # No embedding tables exist, return all chunk IDs
             query = """
-                SELECT c.id, c.code, c.symbol, f.path
+                SELECT c.id
                 FROM chunks c
-                JOIN files f ON c.file_id = f.id
                 ORDER BY c.id
             """
-            return self._db.execute_query(query)
+            result = self._db.execute_query(query)
+            return [row["id"] for row in result]
 
         # Build NOT EXISTS clauses for all embedding tables
         not_exists_clauses = []
@@ -408,33 +462,124 @@ class EmbeddingService(BaseService):
                 )
             """)
 
+        # Get just the IDs (fast query)
         query = f"""
-            SELECT c.id, c.code, c.symbol, f.path
+            SELECT c.id
             FROM chunks c
-            JOIN files f ON c.file_id = f.id
             WHERE {' AND '.join(not_exists_clauses)}
             ORDER BY c.id
         """
 
         # Parameters need to be repeated for each table
         params = [provider, model] * len(embedding_tables)
-        return self._db.execute_query(query, params)
+        result = self._db.execute_query(query, params)
+        return [row["id"] for row in result]
+
+    async def _generate_embeddings_streaming(self, chunk_ids: List[ChunkId]) -> int:
+        """Generate embeddings for chunks by streaming data in batches."""
+        if not chunk_ids or not self._embedding_provider:
+            return 0
+
+        total_generated = 0
+        BATCH_SIZE = 100  # Process 100 chunks at a time to avoid memory issues
+
+        # Show progress bar immediately
+        with tqdm(total=len(chunk_ids), desc="Generating embeddings", unit="chunk") as pbar:
+            for i in range(0, len(chunk_ids), BATCH_SIZE):
+                batch_ids = chunk_ids[i:i + BATCH_SIZE]
+                
+                # Load chunk content for this batch only
+                chunks_data = self._get_chunks_by_ids(batch_ids)
+                if not chunks_data:
+                    pbar.update(len(batch_ids))
+                    continue
+
+                # Extract IDs and texts
+                chunk_id_list = [chunk["id"] for chunk in chunks_data]
+                chunk_texts = [chunk["code"] for chunk in chunks_data]
+
+                # Generate embeddings for this batch (without inner progress bar)
+                batch_count = await self.generate_embeddings_for_chunks(chunk_id_list, chunk_texts, show_progress=False)
+                total_generated += batch_count
+                
+                # Update progress
+                pbar.update(len(batch_ids))
+
+        return total_generated
+
+    def _get_chunks_without_embeddings(self, provider: str, model: str) -> List[Dict[str, Any]]:
+        """Get chunks that don't have embeddings for the specified provider/model."""
+        # Get all embedding tables
+        embedding_tables = self._get_all_embedding_tables()
+
+        if not embedding_tables:
+            # No embedding tables exist, return all chunks (but fetch IDs first for progress)
+            query = """
+                SELECT c.id
+                FROM chunks c
+                ORDER BY c.id
+            """
+            chunk_ids_result = self._db.execute_query(query)
+            chunk_ids = [row["id"] for row in chunk_ids_result]
+            
+            # Now fetch full data
+            if chunk_ids:
+                return self._get_chunks_by_ids(chunk_ids)
+            return []
+
+        # Build NOT EXISTS clauses for all embedding tables
+        not_exists_clauses = []
+        for table_name in embedding_tables:
+            not_exists_clauses.append(f"""
+                NOT EXISTS (
+                    SELECT 1 FROM {table_name} e
+                    WHERE e.chunk_id = c.id
+                    AND e.provider = ?
+                    AND e.model = ?
+                )
+            """)
+
+        # First get just the IDs (much faster query)
+        query = f"""
+            SELECT c.id
+            FROM chunks c
+            WHERE {' AND '.join(not_exists_clauses)}
+            ORDER BY c.id
+        """
+
+        # Parameters need to be repeated for each table
+        params = [provider, model] * len(embedding_tables)
+        chunk_ids_result = self._db.execute_query(query, params)
+        chunk_ids = [row["id"] for row in chunk_ids_result]
+        
+        # Now fetch full data for these chunks
+        if chunk_ids:
+            return self._get_chunks_by_ids(chunk_ids)
+        return []
 
     def _get_chunks_by_ids(self, chunk_ids: List[ChunkId]) -> List[Dict[str, Any]]:
         """Get chunk data for specific chunk IDs."""
         if not chunk_ids:
             return []
 
-        placeholders = ",".join("?" for _ in chunk_ids)
-        query = f"""
-            SELECT c.id, c.code, c.symbol, f.path
-            FROM chunks c
-            JOIN files f ON c.file_id = f.id
-            WHERE c.id IN ({placeholders})
-            ORDER BY c.id
-        """
+        # Process in batches to avoid SQL query size limits and memory issues
+        BATCH_SIZE = 500
+        all_chunks = []
+        
+        for i in range(0, len(chunk_ids), BATCH_SIZE):
+            batch_ids = chunk_ids[i:i + BATCH_SIZE]
+            placeholders = ",".join("?" for _ in batch_ids)
+            query = f"""
+                SELECT c.id, c.code, c.symbol, f.path
+                FROM chunks c
+                JOIN files f ON c.file_id = f.id
+                WHERE c.id IN ({placeholders})
+                ORDER BY c.id
+            """
+            batch_results = self._db.execute_query(query, batch_ids)
+            all_chunks.extend(batch_results)
 
-        return self._db.execute_query(query, chunk_ids)
+        return all_chunks
 
     def _get_chunks_by_file_path(self, file_path: str) -> List[Dict[str, Any]]:
         """Get all chunks for a specific file path."""
