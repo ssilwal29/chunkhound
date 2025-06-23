@@ -69,19 +69,19 @@ class EmbeddingService(BaseService):
             raise ValueError("chunk_ids and chunk_texts must have the same length")
 
         try:
-            logger.info(f"Generating embeddings for {len(chunk_ids)} chunks")
+            logger.debug(f"Generating embeddings for {len(chunk_ids)} chunks")
 
             # Filter out chunks that already have embeddings
             filtered_chunks = await self._filter_existing_embeddings(chunk_ids, chunk_texts)
 
             if not filtered_chunks:
-                logger.info("All chunks already have embeddings")
+                logger.debug("All chunks already have embeddings")
                 return 0
 
             # Generate embeddings in batches
             total_generated = await self._generate_embeddings_in_batches(filtered_chunks, show_progress)
 
-            logger.info(f"Successfully generated {total_generated} embeddings")
+            logger.debug(f"Successfully generated {total_generated} embeddings")
             return total_generated
 
         except Exception as e:
@@ -110,27 +110,38 @@ class EmbeddingService(BaseService):
             target_provider = provider_name or self._embedding_provider.name
             target_model = model_name or self._embedding_provider.model
 
-            logger.info(f"Generating missing embeddings for {target_provider}/{target_model}")
+            # Create a progress bar for the embedding generation process
+            with tqdm(total=3, desc=f"🧠 Embedding generation ({target_provider}/{target_model})", 
+                     unit="step", position=0, leave=False, dynamic_ncols=True) as pbar:
+                pbar.set_description_str(f"🧠 Checking for chunks without embeddings...")
+                
+                # First, just get the count and IDs of chunks without embeddings (fast query)
+                chunk_ids_without_embeddings = self._get_chunk_ids_without_embeddings(target_provider, target_model)
+                pbar.update(1)
 
-            # Show progress message before the heavy database query
-            print(f"🧠 Checking for chunks without embeddings...")
+                if not chunk_ids_without_embeddings:
+                    pbar.set_description_str(f"✅ All chunks have embeddings")
+                    pbar.update(2)  # Complete the progress bar
+                    return {"status": "complete", "generated": 0, "message": "All chunks have embeddings"}
 
-            # First, just get the count and IDs of chunks without embeddings (fast query)
-            chunk_ids_without_embeddings = self._get_chunk_ids_without_embeddings(target_provider, target_model)
+                pbar.set_description_str(f"🧠 Found {len(chunk_ids_without_embeddings)} chunks - generating embeddings...")
+                pbar.update(1)
 
-            if not chunk_ids_without_embeddings:
-                return {"status": "complete", "generated": 0, "message": "All chunks have embeddings"}
-
-            logger.info(f"Found {len(chunk_ids_without_embeddings)} chunks without embeddings")
-            print(f"🧠 Generating embeddings for {len(chunk_ids_without_embeddings)} chunks...")
-
-            # Generate embeddings in streaming fashion (loads chunk content in batches)
-            generated_count = await self._generate_embeddings_streaming(chunk_ids_without_embeddings)
+                # Disable outer progress bar during inner progress bar operation
+                pbar.disable = True
+                
+                # Generate embeddings in streaming fashion (loads chunk content in batches)
+                generated_count = await self._generate_embeddings_streaming(chunk_ids_without_embeddings)
+                
+                # Re-enable and complete outer progress bar
+                pbar.disable = False
+                pbar.update(1)
+                pbar.set_description_str(f"✅ Generated {generated_count} embeddings")
 
             return {
                 "status": "success",
                 "generated": generated_count,
-                "total_chunks": len(chunks_without_embeddings),
+                "total_chunks": len(chunk_ids_without_embeddings),
                 "provider": target_provider,
                 "model": target_model
             }
@@ -324,7 +335,7 @@ class EmbeddingService(BaseService):
         batches = self._create_token_aware_batches(chunk_data)
 
         avg_batch_size = sum(len(batch) for batch in batches) / len(batches) if batches else 0
-        logger.info(f"Processing {len(batches)} token-aware batches (avg {avg_batch_size:.1f} chunks each)")
+        logger.debug(f"Processing {len(batches)} token-aware batches (avg {avg_batch_size:.1f} chunks each)")
 
         # Process batches with concurrency control
         semaphore = asyncio.Semaphore(self._max_concurrent_batches)
@@ -371,23 +382,31 @@ class EmbeddingService(BaseService):
 
         # Show progress bar only if requested
         if show_progress:
-            # Temporarily suppress INFO logs during progress display
+            # Temporarily suppress ALL logs during progress display to prevent flickering
             import sys
+            import io
             from loguru import logger as loguru_logger
             
-            # Store current log level
+            # Store current log handlers
             log_handlers = list(loguru_logger._core.handlers.values())
             
-            # Remove all handlers and add back with ERROR level
+            # Remove all handlers and add a null handler to completely suppress output
             loguru_logger.remove()
-            loguru_logger.add(sys.stderr, level="ERROR")
+            null_stream = io.StringIO()
+            loguru_logger.add(null_stream, level="CRITICAL")
             
             try:
-                with tqdm(total=len(chunk_data), desc="Generating embeddings", unit="chunk") as pbar:
+                with tqdm(total=len(chunk_data), desc="Generating embeddings", unit="chunk", 
+                         position=1, leave=False, dynamic_ncols=True, mininterval=0.2, maxinterval=1.0) as pbar:
                     # Process batches with limited concurrency and progress tracking
+                    import threading
+                    update_lock = threading.Lock()
+                    
                     async def process_batch_with_progress(batch: List[Tuple[ChunkId, str]], batch_num: int) -> int:
                         result = await process_batch(batch, batch_num)
-                        pbar.update(len(batch))  # Update progress by number of chunks processed
+                        # Thread-safe progress update with rate limiting
+                        with update_lock:
+                            pbar.update(len(batch))  # Update progress by number of chunks processed
                         return result
                     
                     # Create tasks with progress tracking
@@ -396,11 +415,8 @@ class EmbeddingService(BaseService):
             finally:
                 # Restore original logging configuration
                 loguru_logger.remove()
-                for handler in log_handlers:
-                    if hasattr(handler, 'levelno'):
-                        loguru_logger.add(sys.stderr, level=handler.levelno)
-                    else:
-                        loguru_logger.add(sys.stderr, level="DEBUG")
+                # Restore default stderr handler with INFO level
+                loguru_logger.add(sys.stderr, level="INFO")
         else:
             # Process without progress bar
             tasks = [process_batch(batch, i) for i, batch in enumerate(batches)]
