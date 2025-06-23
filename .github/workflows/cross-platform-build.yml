@@ -52,7 +52,7 @@ jobs:
             artifact_path: dist/chunkhound-optimized
 
           - platform: macos-arm64
-            os: macos-14 # Apple Silicon
+            os: macos-15 # Apple Silicon (updated to latest)
             binary_name: chunkhound-macos-arm64
             docker_target: "" # Native build
             artifact_path: dist/chunkhound-optimized
@@ -157,16 +157,29 @@ jobs:
           docker create --name temp-ubuntu-$ARCH_SUFFIX chunkhound:ubuntu-build-$ARCH_SUFFIX
           docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/chunkhound-optimized ./dist/
           docker rm temp-ubuntu-$ARCH_SUFFIX
+          
+          # Fix permissions
+          chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
 
           # Create tarball
           cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
 
           # Verify binary (skip for ARM64 on x86_64 host)
           if [ "${{ matrix.platform }}" != "ubuntu-arm64" ]; then
-            ./chunkhound-optimized/chunkhound-optimized --version
+            if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
+              ./dist/chunkhound-optimized/chunkhound-optimized --version
+            else
+              echo "❌ Binary not found at expected location"
+              exit 1
+            fi
           else
             echo "Skipping binary verification for ARM64 build on x86_64 host"
-            file ./chunkhound-optimized/chunkhound-optimized
+            if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
+              file ./dist/chunkhound-optimized/chunkhound-optimized
+            else
+              echo "❌ Binary not found at expected location"
+              exit 1
+            fi
           fi
 
       # macOS: Native build with caching
@@ -208,9 +221,16 @@ jobs:
 
           # Create tarball
           cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
+          cd ..
 
-          # Verify binary
-          ./chunkhound-optimized/chunkhound-optimized --version
+          # Verify binary (ensure correct path)
+          if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
+            chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+            ./dist/chunkhound-optimized/chunkhound-optimized --version
+          else
+            echo "❌ Binary not found at expected location"
+            exit 1
+          fi
 
       - name: Test Binary Performance
         run: |
@@ -218,6 +238,15 @@ jobs:
 
           # Create performance results directory
           mkdir -p ./performance-results
+
+          # Verify binary exists and is executable
+          if [ ! -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
+            echo "❌ Binary not found for performance testing"
+            exit 1
+          fi
+          
+          # Ensure binary is executable
+          chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
 
           # Startup time test with measurements
           echo "Testing startup time..."
@@ -262,10 +291,19 @@ jobs:
           Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')
           EOF
 
-          # Generate checksums
+          # Generate checksums (cross-platform compatible)
           cd dist
-          sha256sum ${{ matrix.binary_name }}.tar.gz > ${{ matrix.binary_name }}.sha256
-          sha256sum chunkhound-optimized/chunkhound-optimized >> ${{ matrix.binary_name }}.sha256
+          if command -v sha256sum >/dev/null 2>&1; then
+            # Linux
+            sha256sum ${{ matrix.binary_name }}.tar.gz > ${{ matrix.binary_name }}.sha256
+            sha256sum chunkhound-optimized/chunkhound-optimized >> ${{ matrix.binary_name }}.sha256
+          elif command -v shasum >/dev/null 2>&1; then
+            # macOS
+            shasum -a 256 ${{ matrix.binary_name }}.tar.gz > ${{ matrix.binary_name }}.sha256
+            shasum -a 256 chunkhound-optimized/chunkhound-optimized >> ${{ matrix.binary_name }}.sha256
+          else
+            echo "No SHA256 utility found" >> ${{ matrix.binary_name }}.sha256
+          fi
 
       - name: Upload Binary Artifacts
         uses: actions/upload-artifact@v4
