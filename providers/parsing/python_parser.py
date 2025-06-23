@@ -203,7 +203,11 @@ class PythonParser:
 
                 function_node = captures["function_def"][0]
                 function_name_node = captures["function_name"][0]
-                function_name = self._get_node_text(function_name_node, source)
+                function_name = self._get_node_text(function_name_node, source).strip()
+                
+                # Fallback for empty function names
+                if not function_name:
+                    function_name = f"function_{function_node.start_point[0] + 1}"
 
                 function_text = self._get_node_text(function_node, source)
 
@@ -260,7 +264,11 @@ class PythonParser:
 
                 class_node = captures["class_def"][0]
                 class_name_node = captures["class_name"][0]
-                class_name = self._get_node_text(class_name_node, source)
+                class_name = self._get_node_text(class_name_node, source).strip()
+                
+                # Fallback for empty class names
+                if not class_name:
+                    class_name = f"class_{class_node.start_point[0] + 1}"
 
                 class_text = self._get_node_text(class_node, source)
 
@@ -328,7 +336,11 @@ class PythonParser:
 
                 method_node = captures["method_def"][0]
                 method_name_node = captures["method_name"][0]
-                method_name = self._get_node_text(method_name_node, source)
+                method_name = self._get_node_text(method_name_node, source).strip()
+                
+                # Fallback for empty method names
+                if not method_name:
+                    method_name = f"method_{method_node.start_point[0] + 1}"
 
                 method_text = self._get_node_text(method_node, source)
 
