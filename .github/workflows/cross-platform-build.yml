@@ -259,7 +259,7 @@ jobs:
       - name: Test Binary Performance
         shell: ${{ matrix.platform == 'windows' && 'powershell' || 'bash' }}
         run: |
-          if ('${{ matrix.platform }}' -eq 'windows') {
+          if ("${{ matrix.platform }}" -eq "windows") {
             Write-Host "⚡ Testing Windows binary performance..."
 
             # Create performance results directory
@@ -371,7 +371,7 @@ jobs:
       - name: Generate Build Info
         shell: ${{ matrix.platform == 'windows' && 'powershell' || 'bash' }}
         run: |
-          if ('${{ matrix.platform }}' -eq 'windows') {
+          if ("${{ matrix.platform }}" -eq "windows") {
             Write-Host "📋 Generating Windows build information..."
 
             $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
