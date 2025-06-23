@@ -390,10 +390,6 @@ class IndexingCoordinator(BaseService):
             # Process files in batches for optimal performance
             total_files = 0
             total_chunks = 0
-            total_embeddings = 0
-
-            # First pass: process files without embeddings for batch optimization
-            file_chunks_for_embedding = []
 
             # Create progress bar for file processing
             with tqdm(total=len(files), desc="Processing files", unit="file") as pbar:
@@ -403,14 +399,6 @@ class IndexingCoordinator(BaseService):
                     if result["status"] == "success":
                         total_files += 1
                         total_chunks += result["chunks"]
-
-                        # Collect chunks for batch embedding generation
-                        if "chunk_data" in result:
-                            file_chunks_for_embedding.extend([
-                                (chunk_id, chunk_data)
-                                for chunk_id, chunk_data in zip(result["chunk_ids"], result["chunk_data"])
-                            ])
-                        
                         pbar.set_postfix_str(f"{total_chunks} chunks")
                     elif result["status"] in ["skipped", "no_content", "no_chunks"]:
                         # Still update progress for skipped files
@@ -421,29 +409,13 @@ class IndexingCoordinator(BaseService):
                     
                     pbar.update(1)
 
-            # Second pass: generate embeddings in batches
-            if self._embedding_provider and file_chunks_for_embedding:
-                print(f"\n🧠 Generating embeddings for {len(file_chunks_for_embedding)} chunks...")
-                
-                # Use EmbeddingService for progress tracking
-                from .embedding_service import EmbeddingService
-                embedding_service = EmbeddingService(
-                    database_provider=self._db,
-                    embedding_provider=self._embedding_provider
-                )
-                
-                # Extract chunk IDs and texts
-                chunk_ids = [chunk_id for chunk_id, _ in file_chunks_for_embedding]
-                chunk_texts = [chunk_data.get("code", "") for _, chunk_data in file_chunks_for_embedding]
-                
-                # Generate embeddings with progress tracking
-                total_embeddings = await embedding_service.generate_embeddings_for_chunks(chunk_ids, chunk_texts)
+            # Note: Embedding generation is handled separately via generate_missing_embeddings()
+            # to provide a unified progress experience
 
             return {
                 "status": "success",
                 "files_processed": total_files,
-                "total_chunks": total_chunks,
-                "total_embeddings": total_embeddings
+                "total_chunks": total_chunks
             }
 
         except Exception as e:
