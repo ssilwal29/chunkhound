@@ -210,13 +210,24 @@ jobs:
             echo "OS: $(uname -s)"
             echo "Full system info: $(uname -a)"
             
-            # Set explicit install directory
-            export UV_INSTALL_DIR="$HOME/.local/bin"
-            mkdir -p "$UV_INSTALL_DIR"
+            # Create installation directory
+            mkdir -p ~/.local/bin
             
-            # Install UV with explicit path
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-            echo "UV installation completed"
+            # For Intel macs, try direct binary download as fallback
+            if [ "$(uname -m)" = "x86_64" ]; then
+              echo "Intel Mac detected - using direct binary download"
+              UV_VERSION="0.7.13"
+              curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-apple-darwin.tar.gz" -o /tmp/uv.tar.gz
+              cd /tmp && tar -xzf uv.tar.gz
+              cp uv-x86_64-apple-darwin/uv ~/.local/bin/uv
+              chmod +x ~/.local/bin/uv
+              echo "Direct UV binary installation completed"
+            else
+              echo "ARM64 Mac detected - using install script"
+              export UV_INSTALL_DIR="$HOME/.local/bin"
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              echo "Script UV installation completed"
+            fi
             
             # Check where UV was actually installed
             echo "Searching for UV binary..."
