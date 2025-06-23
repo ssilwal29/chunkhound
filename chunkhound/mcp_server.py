@@ -578,7 +578,7 @@ async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="search_regex",
-            description="Search code using regular expression patterns",
+            description="Search code chunks using regex patterns. Returns chunk-level matches, not line-level like grep.",
             inputSchema={
                 "type": "object",
                 "properties": {

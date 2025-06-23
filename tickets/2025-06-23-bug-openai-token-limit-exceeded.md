@@ -2,7 +2,7 @@
 
 **Date**: 2025-06-23  
 **Priority**: High  
-**Status**: Open  
+**Status**: Completed  
 **Files**: `providers/embeddings/openai_provider.py`
 
 ## Problem
@@ -36,8 +36,19 @@ Implement token-aware batching:
 
 ## Acceptance Criteria
 
-- [ ] No token limit exceeded errors
-- [ ] Dynamic batch sizing based on token count
-- [ ] Handle individual chunks that exceed token limits
-- [ ] Maintain embedding generation throughput
-- [ ] Add token limit configuration per model
+- [x] No token limit exceeded errors
+- [x] Dynamic batch sizing based on token count
+- [x] Handle individual chunks that exceed token limits
+- [x] Maintain embedding generation throughput
+- [x] Add token limit configuration per model
+
+## Solution Implemented
+
+Fixed token limit issue in `providers/embeddings/openai_provider.py`:
+
+1. **Token-aware batching**: Added `estimate_batch_tokens()` and `get_model_token_limit()` methods
+2. **Dynamic batch sizing**: Modified `embed_batch()` to respect 8,192 token limit with safety margin
+3. **Oversized chunk handling**: Automatically splits individual texts exceeding token limits
+4. **Model configuration**: Added `max_tokens` to model config for `text-embedding-3-small/large` and `ada-002`
+
+Tests pass, preventing token limit exceeded errors while maintaining throughput.
