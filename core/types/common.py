@@ -61,6 +61,11 @@ class ChunkType(Enum):
     PARAGRAPH = "paragraph"
     CODE_BLOCK = "code_block"
 
+    # Configuration types
+    TABLE = "table"
+    KEY_VALUE = "key_value"
+    ARRAY = "array"
+
     # Generic types
     BLOCK = "block"
     UNKNOWN = "unknown"
@@ -114,6 +119,7 @@ class Language(Enum):
     # Data/Configuration languages
     JSON = "json"
     YAML = "yaml"
+    TOML = "toml"
     TEXT = "text"
 
     # Generic/unknown
@@ -148,6 +154,7 @@ class Language(Enum):
             '.json': cls.JSON,
             '.yaml': cls.YAML,
             '.yml': cls.YAML,
+            '.toml': cls.TOML,
             '.txt': cls.TEXT,
         }
 

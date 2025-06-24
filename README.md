@@ -97,7 +97,7 @@ Add to `.cursor/mcp.json` in your project:
 - **Semantic search** - "Find database connection code"
 - **Regex search** - Find exact patterns like `async def.*error`
 - **Code context** - AI assistants understand your codebase structure
-- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Groovy, Kotlin, Bash, Markdown, JSON, YAML
+- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Groovy, Kotlin, Bash, Markdown, JSON, YAML, TOML
 
 ## Language Support
 
@@ -114,6 +114,7 @@ Add to `.cursor/mcp.json` in your project:
 | **Markdown** | `.md`, `.markdown` | Headers, code blocks, documentation |
 | **JSON** | `.json` | Structure and data elements |
 | **YAML** | `.yaml`, `.yml` | Configuration and data elements |
+| **TOML** | `.toml` | Tables, key-value pairs, arrays, inline tables |
 | **Text** | `.txt` | Plain text content |
 
 ## Usage Modes

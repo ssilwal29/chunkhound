@@ -28,6 +28,7 @@ try:
     from providers.parsing.bash_parser import BashParser
     from providers.parsing.markdown_parser import MarkdownParser
     from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
+    from providers.parsing.toml_parser import TomlParser
 
     # Import services
     from services.base_service import BaseService
@@ -49,6 +50,7 @@ except ImportError:
     from chunkhound.providers.parsing.bash_parser import BashParser
     from chunkhound.providers.parsing.markdown_parser import MarkdownParser
     from chunkhound.providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
+    from chunkhound.providers.parsing.toml_parser import TomlParser
 
     # Import services
     from chunkhound.services.base_service import BaseService
@@ -353,6 +355,13 @@ class ProviderRegistry:
                 logger.debug("Registered YAML parser")
         except Exception as e:
             logger.warning(f"Failed to register YAML parser: {e}")
+
+        try:
+            self.register_language_parser(Language.TOML, TomlParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered TOML parser")
+        except Exception as e:
+            logger.warning(f"Failed to register TOML parser: {e}")
 
         try:
             self.register_language_parser(Language.TEXT, PlainTextParser)
