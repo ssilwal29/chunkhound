@@ -2,8 +2,12 @@
 
 import argparse
 import asyncio
+import multiprocessing
 import os
 import sys
+
+# Required for PyInstaller multiprocessing support
+multiprocessing.freeze_support()
 
 
 # Check for MCP command early to avoid any imports that trigger logging
