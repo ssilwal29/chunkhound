@@ -42,6 +42,7 @@ try:
     from .file_watcher import FileWatcherManager
     from .core.config import EmbeddingConfig, EmbeddingProviderFactory
     from .registry import configure_registry, get_registry
+    from .task_coordinator import TaskCoordinator, TaskPriority
 except ImportError:
     # Handle running as standalone script or PyInstaller binary
     from chunkhound.database import Database
@@ -50,6 +51,7 @@ except ImportError:
     from chunkhound.file_watcher import FileWatcherManager
     from chunkhound.core.config import EmbeddingConfig, EmbeddingProviderFactory
     from registry import configure_registry, get_registry
+    from chunkhound.task_coordinator import TaskCoordinator, TaskPriority
 
 # Global database, embedding manager, and file watcher instances
 # Global state management
@@ -57,6 +59,7 @@ _database: Optional[Database] = None
 _embedding_manager: Optional[EmbeddingManager] = None
 _file_watcher: Optional[FileWatcherManager] = None
 _signal_coordinator: Optional[SignalCoordinator] = None
+_task_coordinator: Optional[TaskCoordinator] = None
 
 # Initialize MCP server with explicit stdio
 server = Server("ChunkHound Code Search")
@@ -130,7 +133,7 @@ def log_environment_diagnostics():
 @asynccontextmanager
 async def server_lifespan(server: Server) -> AsyncIterator[dict]:
     """Manage server startup and shutdown lifecycle."""
-    global _database, _embedding_manager, _file_watcher, _signal_coordinator
+    global _database, _embedding_manager, _file_watcher, _signal_coordinator, _task_coordinator
 
     # Set MCP mode to suppress stderr output that interferes with JSON-RPC
     os.environ["CHUNKHOUND_MCP_MODE"] = "1"
@@ -231,6 +234,12 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
         if "CHUNKHOUND_DEBUG" in os.environ:
             print("Server lifespan: Signal coordination setup complete", file=sys.stderr)
 
+        # Initialize task coordinator for priority-based operation processing
+        _task_coordinator = TaskCoordinator(max_queue_size=1000)
+        await _task_coordinator.start()
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Server lifespan: Task coordinator initialized", file=sys.stderr)
+
         # Initialize filesystem watcher with offline catch-up
         _file_watcher = FileWatcherManager()
         try:
@@ -279,7 +288,7 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
             print("Server lifespan: All components initialized successfully", file=sys.stderr)
 
         # Return server context to the caller
-        yield {"db": _database, "embeddings": _embedding_manager, "watcher": _file_watcher}
+        yield {"db": _database, "embeddings": _embedding_manager, "watcher": _file_watcher, "task_coordinator": _task_coordinator}
 
     except Exception as e:
         if "CHUNKHOUND_DEBUG" in os.environ:
@@ -290,6 +299,18 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
     finally:
         if "CHUNKHOUND_DEBUG" in os.environ:
             print("Server lifespan: Entering cleanup phase", file=sys.stderr)
+
+        # Cleanup task coordinator
+        if _task_coordinator:
+            try:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Stopping task coordinator...", file=sys.stderr)
+                await _task_coordinator.stop()
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Task coordinator stopped", file=sys.stderr)
+            except Exception as tc_cleanup_error:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Server lifespan: Error stopping task coordinator: {tc_cleanup_error}", file=sys.stderr)
 
         # Cleanup coordination files
         if _signal_coordinator:
@@ -346,34 +367,54 @@ async def process_file_change(file_path: Path, event_type: str):
     Process a file change event by updating the database.
 
     This function is called by the filesystem watcher when files change.
-    It runs in the main thread to ensure single-threaded database access.
+    Uses the task coordinator to ensure file processing doesn't block search operations.
     """
-    global _database, _embedding_manager
+    global _database, _embedding_manager, _task_coordinator
 
     if not _database:
         return
 
-    try:
-        if event_type == 'deleted':
-            # Remove file from database with cleanup tracking
-            _database.delete_file_completely(str(file_path))
-        else:
-            # Process file (created, modified, moved)
-            if file_path.exists() and file_path.is_file():
-                # Phase 4: Verify file is fully written before processing
-                if not await _wait_for_file_completion(file_path):
-                    return  # Skip if file not ready
+    async def _execute_file_processing():
+        """Execute the actual file processing logic."""
+        try:
+            if event_type == 'deleted':
+                # Remove file from database with cleanup tracking
+                _database.delete_file_completely(str(file_path))
+            else:
+                # Process file (created, modified, moved)
+                if file_path.exists() and file_path.is_file():
+                    # Phase 4: Verify file is fully written before processing
+                    if not await _wait_for_file_completion(file_path):
+                        return  # Skip if file not ready
 
-                # Use incremental processing for 10-100x performance improvement
-                await _database.process_file_incremental(file_path=file_path)
-                
-                # Transaction already committed by IndexingCoordinator with backup/rollback safety
-    except Exception as e:
-        # Log the exception instead of silently handling it
-        if "CHUNKHOUND_DEBUG" in os.environ:
-            print(f"Exception during {event_type} processing: {e}", file=sys.stderr)
-            import traceback
-            print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
+                    # Use incremental processing for 10-100x performance improvement
+                    await _database.process_file_incremental(file_path=file_path)
+                    
+                    # Transaction already committed by IndexingCoordinator with backup/rollback safety
+        except Exception as e:
+            # Log the exception instead of silently handling it
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Exception during {event_type} processing: {e}", file=sys.stderr)
+                import traceback
+                print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
+
+    # Queue file processing as low-priority task to avoid blocking searches
+    if _task_coordinator:
+        try:
+            # Use nowait to avoid blocking the file watcher
+            future = await _task_coordinator.queue_task_nowait(
+                TaskPriority.LOW, 
+                _execute_file_processing
+            )
+            # Don't await the future - let file processing happen in background
+        except Exception as e:
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Failed to queue file processing task: {e}", file=sys.stderr)
+            # Fallback to direct processing if queue is full or coordinator is down
+            await _execute_file_processing()
+    else:
+        # Fallback to direct processing if no task coordinator
+        await _execute_file_processing()
 
 
 def estimate_tokens(text: str) -> int:
@@ -474,7 +515,7 @@ async def call_tool(
         limit = max(1, min(arguments.get("limit", 10), 100))
         max_tokens = max(1000, min(arguments.get("max_response_tokens", 20000), 25000))
 
-        try:
+        async def _execute_regex_search():
             # Check connection instead of forcing reconnection (fixes race condition)
             if _database and not _database.is_connected():
                 if "CHUNKHOUND_DEBUG" in os.environ:
@@ -493,6 +534,12 @@ async def call_tool(
                 response_text = convert_to_ndjson(optimized_results)
             
             return [types.TextContent(type="text", text=response_text)]
+
+        try:
+            if _task_coordinator:
+                return await _task_coordinator.queue_task(TaskPriority.HIGH, _execute_regex_search)
+            else:
+                return await _execute_regex_search()
         except Exception as e:
             raise Exception(f"Search failed: {str(e)}")
 
@@ -507,7 +554,7 @@ async def call_tool(
         if not _embedding_manager or not _embedding_manager.list_providers():
             raise Exception("No embedding providers available. Set OPENAI_API_KEY to enable semantic search.")
 
-        try:
+        async def _execute_semantic_search():
             # Check connection instead of forcing reconnection (fixes race condition)
             if _database and not _database.is_connected():
                 if "CHUNKHOUND_DEBUG" in os.environ:
@@ -549,24 +596,48 @@ async def call_tool(
                 # Handle MCP timeout gracefully with informative error
                 raise Exception("Semantic search timed out. This can happen when OpenAI API is experiencing high latency. Please try again.")
 
+        try:
+            if _task_coordinator:
+                return await _task_coordinator.queue_task(TaskPriority.HIGH, _execute_semantic_search)
+            else:
+                return await _execute_semantic_search()
         except Exception as e:
             raise Exception(f"Semantic search failed: {str(e)}")
 
     elif name == "get_stats":
-        try:
+        async def _execute_get_stats():
             stats = _database.get_stats()
+            if _task_coordinator:
+                # Add task coordinator stats
+                stats['task_coordinator'] = _task_coordinator.get_stats()
             return [types.TextContent(type="text", text=json.dumps(stats, ensure_ascii=False))]
+
+        try:
+            if _task_coordinator:
+                return await _task_coordinator.queue_task(TaskPriority.MEDIUM, _execute_get_stats)
+            else:
+                return await _execute_get_stats()
         except Exception as e:
             raise Exception(f"Failed to get stats: {str(e)}")
 
     elif name == "health_check":
-        health_status = {
-            "status": "healthy",
-            "version": "1.1.0",
-            "database_connected": _database is not None,
-            "embedding_providers": _embedding_manager.list_providers() if _embedding_manager else []
-        }
-        return [types.TextContent(type="text", text=json.dumps(health_status, ensure_ascii=False))]
+        async def _execute_health_check():
+            health_status = {
+                "status": "healthy",
+                "version": "1.1.0",
+                "database_connected": _database is not None,
+                "embedding_providers": _embedding_manager.list_providers() if _embedding_manager else [],
+                "task_coordinator_running": _task_coordinator.get_stats()['is_running'] if _task_coordinator else False
+            }
+            return [types.TextContent(type="text", text=json.dumps(health_status, ensure_ascii=False))]
+
+        try:
+            if _task_coordinator:
+                return await _task_coordinator.queue_task(TaskPriority.MEDIUM, _execute_health_check)
+            else:
+                return await _execute_health_check()
+        except Exception as e:
+            raise Exception(f"Failed to perform health check: {str(e)}")
 
     else:
         raise ValueError(f"Tool not found: {name}")
