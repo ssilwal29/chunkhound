@@ -30,6 +30,7 @@ try:
     from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
     from providers.parsing.toml_parser import TomlParser
     from providers.parsing.c_parser import CParser
+    from providers.parsing.cpp_parser import CppParser
 
     # Import services
     from services.base_service import BaseService
@@ -53,6 +54,7 @@ except ImportError:
     from chunkhound.providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
     from chunkhound.providers.parsing.toml_parser import TomlParser
     from chunkhound.providers.parsing.c_parser import CParser
+    from chunkhound.providers.parsing.cpp_parser import CppParser
 
     # Import services
     from chunkhound.services.base_service import BaseService
@@ -342,6 +344,13 @@ class ProviderRegistry:
                 logger.debug("Registered C parser")
         except Exception as e:
             logger.warning(f"Failed to register C parser: {e}")
+
+        try:
+            self.register_language_parser(Language.CPP, CppParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered C++ parser")
+        except Exception as e:
+            logger.warning(f"Failed to register C++ parser: {e}")
 
         try:
             self.register_language_parser(Language.MARKDOWN, MarkdownParser)

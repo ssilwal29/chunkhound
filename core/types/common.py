@@ -119,6 +119,7 @@ class Language(Enum):
     BASH = "bash"
     MAKEFILE = "makefile"
     C = "c"
+    CPP = "cpp"
 
     # Documentation languages
     MARKDOWN = "markdown"
@@ -177,6 +178,12 @@ class Language(Enum):
             '.txt': cls.TEXT,
             '.c': cls.C,
             '.h': cls.C,
+            '.cpp': cls.CPP,
+            '.cxx': cls.CPP,
+            '.cc': cls.CPP,
+            '.hpp': cls.CPP,
+            '.hxx': cls.CPP,
+            '.h++': cls.CPP,
         }
 
         return extension_map.get(extension, cls.UNKNOWN)
@@ -194,14 +201,14 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH, self.MAKEFILE, self.C
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH, self.MAKEFILE, self.C, self.CPP
         }
 
     @property
     def supports_classes(self) -> bool:
         """Return True if this language supports class definitions."""
         return self in {
-            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX, self.GROOVY, self.KOTLIN
+            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX, self.GROOVY, self.KOTLIN, self.CPP
         }
 
     @property
