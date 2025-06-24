@@ -1176,165 +1176,84 @@ class DuckDBProvider:
         else:
             logger.debug(f"🔧 BATCH THRESHOLD FIX: Forcing HNSW optimization for small batch ({actual_batch_size} < {hnsw_threshold}) - Phase 1 active")
 
-        # Create progress bar for database operations (only for larger batches to avoid flickering)
-        desc = f"💾 Storing {actual_batch_size} embeddings"
-        show_db_progress = actual_batch_size >= 20  # Only show for larger batches
-        
-        if show_db_progress:
-            pbar = tqdm(total=5, desc=desc, unit="step", position=2, leave=False, 
-                       dynamic_ncols=True, mininterval=0.3, maxinterval=2.0)
-        else:
-            pbar = None
-            
         try:
-            # Helper function for conditional progress updates
-            def update_progress(steps=1, description=None):
-                if pbar:
-                    if description:
-                        pbar.set_description_str(description)
-                    pbar.update(steps)
-            
-            try:
-                total_inserted = 0
-                start_time = time.time()
+            total_inserted = 0
+            start_time = time.time()
 
-                if use_hnsw_optimization:
-                    # CRITICAL OPTIMIZATION: Drop HNSW indexes for bulk operations (Context7 best practice)
-                    update_progress(description=f"💾 Optimizing indexes for {actual_batch_size} embeddings...")
-                    logger.debug(f"🔧 Large batch detected ({actual_batch_size} embeddings >= {hnsw_threshold}), applying HNSW optimization")
+            if use_hnsw_optimization:
+                # CRITICAL OPTIMIZATION: Drop HNSW indexes for bulk operations (Context7 best practice)
+                logger.debug(f"🔧 Large batch detected ({actual_batch_size} embeddings >= {hnsw_threshold}), applying HNSW optimization")
 
-                    # Extract dims for index management
-                    dims = first_embedding['dims']
+                # Extract dims for index management
+                dims = first_embedding['dims']
 
-                    # Step 1: Drop HNSW index to enable fast insertions
-                    logger.debug(f"📉 Dropping HNSW index to enable fast bulk insertions")
-                    existing_indexes = self.get_existing_vector_indexes()
-                    dropped_indexes = []
+                # Step 1: Drop HNSW index to enable fast insertions
+                existing_indexes = self.get_existing_vector_indexes()
+                dropped_indexes = []
 
-                    for index_info in existing_indexes:
-                        try:
-                            self.drop_vector_index(
-                                index_info['provider'],
-                                index_info['model'],
-                                index_info['dims'],
-                                index_info['metric']
-                            )
-                            dropped_indexes.append(index_info)
-                            logger.debug(f"Dropped index: {index_info['index_name']}")
-                        except Exception as e:
-                            logger.warning(f"Could not drop index {index_info['index_name']}: {e}")
+                for index_info in existing_indexes:
+                    try:
+                        self.drop_vector_index(
+                            index_info['provider'],
+                            index_info['model'],
+                            index_info['dims'],
+                            index_info['metric']
+                        )
+                        dropped_indexes.append(index_info)
+                        logger.debug(f"Dropped index: {index_info['index_name']}")
+                    except Exception as e:
+                        logger.warning(f"Could not drop index {index_info['index_name']}: {e}")
 
-                    update_progress(1)
-                    
-                    # Step 2: Separate new vs existing embeddings for optimal INSERT strategy
-                    update_progress(description=f"💾 Analyzing conflicts for {actual_batch_size} embeddings...")
-                    logger.debug(f"🔍 Checking for conflicts to optimize INSERT vs INSERT OR REPLACE")
-                    chunk_ids = [emb['chunk_id'] for emb in embeddings_data]
-                    existing_chunk_ids = self.get_existing_embeddings(chunk_ids, provider, model, table_name)
+                
+                # Step 2: Separate new vs existing embeddings for optimal INSERT strategy
+                chunk_ids = [emb['chunk_id'] for emb in embeddings_data]
+                existing_chunk_ids = self.get_existing_embeddings(chunk_ids, provider, model, table_name)
 
-                    # Separate new vs existing embeddings
-                    new_embeddings = [emb for emb in embeddings_data if emb['chunk_id'] not in existing_chunk_ids]
-                    update_embeddings = [emb for emb in embeddings_data if emb['chunk_id'] in existing_chunk_ids]
+                # Separate new vs existing embeddings
+                new_embeddings = [emb for emb in embeddings_data if emb['chunk_id'] not in existing_chunk_ids]
+                update_embeddings = [emb for emb in embeddings_data if emb['chunk_id'] in existing_chunk_ids]
 
-                    logger.debug(f"📊 Batch breakdown: {len(new_embeddings)} new, {len(update_embeddings)} updates")
-                    update_progress(1)
+                # logger.debug(f"📊 Batch breakdown: {len(new_embeddings)} new, {len(update_embeddings)} updates")
 
-                    # Step 3: Fast INSERT for new embeddings using VALUES table construction
-                    if new_embeddings:
-                        update_progress(description=f"💾 Inserting {len(new_embeddings)} new embeddings...")
-                        logger.debug(f"🚀 Executing fast VALUES INSERT for {len(new_embeddings)} new embeddings")
+                # Step 3: Fast INSERT for new embeddings using VALUES table construction
+                if new_embeddings:
 
-                        insert_start = time.time()
-
-                        try:
-                            # Set DuckDB performance options for bulk loading
-                            conn.execute("SET preserve_insertion_order = false")
-
-                            # Build VALUES clause for bulk insert (much faster than executemany)
-                            values_parts = []
-                            for embedding_data in new_embeddings:
-                                vector_str = str(embedding_data['embedding'])
-                                values_parts.append(f"({embedding_data['chunk_id']}, '{embedding_data['provider']}', '{embedding_data['model']}', {vector_str}, {embedding_data['dims']})")
-
-                            # Single INSERT with all values (fastest approach without external deps)
-                            values_clause = ",\n    ".join(values_parts)
-                            conn.execute(f"""
-                                INSERT INTO {table_name} (chunk_id, provider, model, embedding, dims)
-                                VALUES {values_clause}
-                            """)
-
-                            insert_time = time.time() - insert_start
-                            logger.debug(f"✅ Fast VALUES INSERT completed in {insert_time:.3f}s ({len(new_embeddings)/insert_time:.1f} emb/s)")
-                            total_inserted += len(new_embeddings)
-
-                        except Exception as e:
-                            logger.error(f"Fast VALUES INSERT failed: {e}")
-                            raise
-
-                    update_progress(1)
-
-                    # Step 4: INSERT OR REPLACE only for updates using VALUES approach
-                    if update_embeddings:
-                        update_progress(description=f"💾 Updating {len(update_embeddings)} existing embeddings...")
-                        logger.debug(f"🔄 Executing VALUES INSERT OR REPLACE for {len(update_embeddings)} updates")
-
-                        update_start = time.time()
-
-                        try:
-                            # Build VALUES clause for bulk updates
-                            values_parts = []
-                            for embedding_data in update_embeddings:
-                                vector_str = str(embedding_data['embedding'])
-                                values_parts.append(f"({embedding_data['chunk_id']}, '{embedding_data['provider']}', '{embedding_data['model']}', {vector_str}, {embedding_data['dims']})")
-
-                            # Single INSERT OR REPLACE with all values
-                            values_clause = ",\n    ".join(values_parts)
-                            conn.execute(f"""
-                                INSERT OR REPLACE INTO {table_name} (chunk_id, provider, model, embedding, dims)
-                                VALUES {values_clause}
-                            """)
-
-                            update_time = time.time() - update_start
-                            logger.debug(f"✅ VALUES UPDATE completed in {update_time:.3f}s ({len(update_embeddings)/update_time:.1f} emb/s)")
-                            total_inserted += len(update_embeddings)
-
-                        except Exception as e:
-                            logger.error(f"VALUES UPDATE failed: {e}")
-                            raise
-
-                    # Step 5: Recreate HNSW index for fast similarity search
-                    if dropped_indexes:
-                        update_progress(description=f"💾 Recreating indexes for fast search...")
-                        logger.debug(f"📈 Recreating HNSW index for fast similarity search")
-                        index_start = time.time()
-                        for index_info in dropped_indexes:
-                            try:
-                                self.create_vector_index(
-                                    index_info['provider'],
-                                    index_info['model'],
-                                    index_info['dims'],
-                                    index_info['metric']
-                                )
-                                logger.debug(f"Recreated HNSW index: {index_info['index_name']}")
-                            except Exception as e:
-                                logger.error(f"Failed to recreate index {index_info['index_name']}: {e}")
-                                # Continue - data is inserted, just no index optimization for search
-                        index_time = time.time() - index_start
-                        logger.debug(f"✅ HNSW index recreated in {index_time:.3f}s")
-
-                    update_progress(1, f"✅ Stored {actual_batch_size} embeddings successfully")
-
-                else:
-                    # Small batch: use VALUES approach for consistency
-                    update_progress(description=f"💾 Small batch: storing {actual_batch_size} embeddings...")
-                    logger.debug(f"📝 Small batch: using VALUES INSERT OR REPLACE for {actual_batch_size} embeddings (< {hnsw_threshold} threshold)")
-
-                    small_start = time.time()
+                    insert_start = time.time()
 
                     try:
-                        # Build VALUES clause for small batch
+                        # Set DuckDB performance options for bulk loading
+                        conn.execute("SET preserve_insertion_order = false")
+
+                        # Build VALUES clause for bulk insert (much faster than executemany)
                         values_parts = []
-                        for embedding_data in embeddings_data:
+                        for embedding_data in new_embeddings:
+                            vector_str = str(embedding_data['embedding'])
+                            values_parts.append(f"({embedding_data['chunk_id']}, '{embedding_data['provider']}', '{embedding_data['model']}', {vector_str}, {embedding_data['dims']})")
+
+                        # Single INSERT with all values (fastest approach without external deps)
+                        values_clause = ",\n    ".join(values_parts)
+                        conn.execute(f"""
+                            INSERT INTO {table_name} (chunk_id, provider, model, embedding, dims)
+                            VALUES {values_clause}
+                        """)
+
+                        insert_time = time.time() - insert_start
+                        logger.debug(f"✅ Fast VALUES INSERT completed in {insert_time:.3f}s ({len(new_embeddings)/insert_time:.1f} emb/s)")
+                        total_inserted += len(new_embeddings)
+
+                    except Exception as e:
+                        logger.error(f"Fast VALUES INSERT failed: {e}")
+                        raise
+
+                
+                # Step 4: INSERT OR REPLACE only for updates using VALUES approach
+                if update_embeddings:
+                    update_start = time.time()
+
+                    try:
+                        # Build VALUES clause for bulk updates
+                        values_parts = []
+                        for embedding_data in update_embeddings:
                             vector_str = str(embedding_data['embedding'])
                             values_parts.append(f"({embedding_data['chunk_id']}, '{embedding_data['provider']}', '{embedding_data['model']}', {vector_str}, {embedding_data['dims']})")
 
@@ -1345,35 +1264,80 @@ class DuckDBProvider:
                             VALUES {values_clause}
                         """)
 
-                        small_time = time.time() - small_start
-                        logger.debug(f"✅ Small VALUES batch completed in {small_time:.3f}s ({len(embeddings_data)/small_time:.1f} emb/s)")
-                        total_inserted = len(embeddings_data)
+                        update_time = time.time() - update_start
+                        logger.debug(f"✅ VALUES UPDATE completed in {update_time:.3f}s ({len(update_embeddings)/update_time:.1f} emb/s)")
+                        total_inserted += len(update_embeddings)
 
                     except Exception as e:
-                        logger.error(f"Small VALUES batch failed: {e}")
+                        logger.error(f"VALUES UPDATE failed: {e}")
                         raise
 
-                    # Update progress for small batch completion
-                    update_progress(4, f"✅ Stored {actual_batch_size} embeddings successfully")
+                # Step 5: Recreate HNSW index for fast similarity search
+                if dropped_indexes:
+                    logger.debug(f"📈 Recreating HNSW index for fast similarity search")
+                    index_start = time.time()
+                    for index_info in dropped_indexes:
+                        try:
+                            self.create_vector_index(
+                                index_info['provider'],
+                                index_info['model'],
+                                index_info['dims'],
+                                index_info['metric']
+                            )
+                            logger.debug(f"Recreated HNSW index: {index_info['index_name']}")
+                        except Exception as e:
+                            logger.error(f"Failed to recreate index {index_info['index_name']}: {e}")
+                            # Continue - data is inserted, just no index optimization for search
+                    index_time = time.time() - index_start
+                    logger.debug(f"✅ HNSW index recreated in {index_time:.3f}s")
 
-                insert_time = time.time() - start_time
-                logger.debug(f"⚡ Batch INSERT completed in {insert_time:.3f}s")
+                logger.debug(f"✅ Stored {actual_batch_size} embeddings successfully")
 
-                if use_hnsw_optimization:
-                    logger.debug(f"🏆 HNSW-optimized batch insert: {total_inserted} embeddings in {insert_time:.3f}s ({total_inserted/insert_time:.1f} embeddings/sec) - Expected 10-20x speedup achieved!")
-                else:
-                    logger.debug(f"🎯 Standard batch insert: {total_inserted} embeddings in {insert_time:.3f}s ({total_inserted/insert_time:.1f} embeddings/sec)")
+            else:
+                # Small batch: use VALUES approach for consistency
+                small_start = time.time()
 
-                return total_inserted
+                try:
+                    # Build VALUES clause for small batch
+                    values_parts = []
+                    for embedding_data in embeddings_data:
+                        vector_str = str(embedding_data['embedding'])
+                        values_parts.append(f"({embedding_data['chunk_id']}, '{embedding_data['provider']}', '{embedding_data['model']}', {vector_str}, {embedding_data['dims']})")
 
-            except Exception as e:
-                logger.error(f"💥 CRITICAL: Optimized batch insert failed: {e}")
-                logger.warning(f"⚠️ This indicates a critical issue with VALUES clause approach!")
-                raise
+                    # Single INSERT OR REPLACE with all values
+                    values_clause = ",\n    ".join(values_parts)
+                    conn.execute(f"""
+                        INSERT OR REPLACE INTO {table_name} (chunk_id, provider, model, embedding, dims)
+                        VALUES {values_clause}
+                    """)
+
+                    small_time = time.time() - small_start
+                    logger.debug(f"✅ Small VALUES batch completed in {small_time:.3f}s ({len(embeddings_data)/small_time:.1f} emb/s)")
+                    total_inserted = len(embeddings_data)
+
+                except Exception as e:
+                    logger.error(f"Small VALUES batch failed: {e}")
+                    raise
+
+                # Update progress for small batch completion
+                logger.debug(f"✅ Stored {actual_batch_size} embeddings successfully")
+
+            insert_time = time.time() - start_time
+            logger.debug(f"⚡ Batch INSERT completed in {insert_time:.3f}s")
+
+            if use_hnsw_optimization:
+                logger.debug(f"🏆 HNSW-optimized batch insert: {total_inserted} embeddings in {insert_time:.3f}s ({total_inserted/insert_time:.1f} embeddings/sec) - Expected 10-20x speedup achieved!")
+            else:
+                logger.debug(f"🎯 Standard batch insert: {total_inserted} embeddings in {insert_time:.3f}s ({total_inserted/insert_time:.1f} embeddings/sec)")
+
+            return total_inserted
+
+        except Exception as e:
+            logger.error(f"💥 CRITICAL: Optimized batch insert failed: {e}")
+            logger.warning(f"⚠️ This indicates a critical issue with VALUES clause approach!")
+            raise
         finally:
-            # Close progress bar if it was created
-            if pbar:
-                pbar.close()
+            pass
 
     def get_embedding_by_chunk_id(self, chunk_id: int, provider: str, model: str) -> Optional[Embedding]:
         """Get embedding for specific chunk, provider, and model."""
