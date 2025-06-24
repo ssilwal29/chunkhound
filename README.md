@@ -97,7 +97,7 @@ Add to `.cursor/mcp.json` in your project:
 - **Semantic search** - "Find database connection code"
 - **Regex search** - Find exact patterns like `async def.*error`
 - **Code context** - AI assistants understand your codebase structure
-- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Groovy, Kotlin, C, C++, Matlab, Bash, Makefile, Markdown, JSON, YAML, TOML
+- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Groovy, Kotlin, Go, C, C++, Matlab, Bash, Makefile, Markdown, JSON, YAML, TOML
 
 ## Language Support
 
@@ -110,6 +110,7 @@ Add to `.cursor/mcp.json` in your project:
 | **JavaScript** | `.js`, `.jsx` | Functions, classes, React components |
 | **Groovy** | `.groovy`, `.gvy`, `.gy` | Classes, methods, closures, traits, enums, scripts |
 | **Kotlin** | `.kt`, `.kts` | Classes, objects, functions, properties, data classes, extension functions |
+| **Go** | `.go` | Functions, methods, structs, interfaces, type declarations, variables, constants |
 | **C** | `.c`, `.h` | Functions, structs, unions, enums, variables, typedefs, macros |
 | **C++** | `.cpp`, `.cxx`, `.cc`, `.hpp`, `.hxx`, `.h++` | Classes, functions, namespaces, templates, enums, variables, type aliases, macros |
 | **Matlab** | `.m` | Functions, classes, methods, scripts, nested functions |
