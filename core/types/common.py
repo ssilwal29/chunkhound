@@ -106,6 +106,7 @@ class Language(Enum):
     JSX = "jsx"
     GROOVY = "groovy"
     KOTLIN = "kotlin"
+    BASH = "bash"
 
     # Documentation languages
     MARKDOWN = "markdown"
@@ -139,6 +140,9 @@ class Language(Enum):
             '.gy': cls.GROOVY,
             '.kt': cls.KOTLIN,
             '.kts': cls.KOTLIN,
+            '.sh': cls.BASH,
+            '.bash': cls.BASH,
+            '.zsh': cls.BASH,
             '.md': cls.MARKDOWN,
             '.markdown': cls.MARKDOWN,
             '.json': cls.JSON,
@@ -162,7 +166,7 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH
         }
 
     @property
