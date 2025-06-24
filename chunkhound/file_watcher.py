@@ -53,6 +53,16 @@ SUPPORTED_EXTENSIONS = {
     '.ts', '.tsx',           # TypeScript
     '.js', '.jsx',           # JavaScript
     '.md', '.markdown',      # Markdown
+    '.rs',                   # Rust
+    '.go',                   # Go
+    '.c', '.h',              # C
+    '.cpp', '.hpp', '.cc', '.cxx',  # C++
+    '.kt',                   # Kotlin
+    '.groovy',               # Groovy
+    '.sh', '.bash',          # Bash
+    '.toml',                 # TOML
+    '.m',                    # MATLAB
+    'Makefile', 'makefile',  # Makefile
     '.json',                 # JSON
     '.yaml', '.yml',         # YAML
     '.txt',                  # Text

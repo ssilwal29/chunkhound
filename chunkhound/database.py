@@ -131,9 +131,30 @@ class Database:
         Delegates to IndexingCoordinator for actual processing.
         """
         if patterns is None:
-            patterns = ["**/*.py", "**/*.java", "**/*.cs", "**/*.ts", "**/*.js", "**/*.tsx", "**/*.jsx", "**/*.md", "**/*.markdown"]
+            # Include all supported file extensions from registry
+            patterns = [
+                "**/*.py", "**/*.pyw",           # Python
+                "**/*.java",                     # Java
+                "**/*.cs",                       # C#
+                "**/*.ts", "**/*.tsx",           # TypeScript
+                "**/*.js", "**/*.jsx",           # JavaScript
+                "**/*.md", "**/*.markdown",      # Markdown
+                "**/*.rs",                       # Rust
+                "**/*.go",                       # Go
+                "**/*.c", "**/*.h",              # C
+                "**/*.cpp", "**/*.hpp", "**/*.cc", "**/*.cxx", "**/*.h++", "**/*.hxx",
+                "**/*.kt", "**/*.kts",           # Kotlin
+                "**/*.groovy", "**/*.gvy", "**/*.gy",  # Groovy
+                "**/*.sh", "**/*.bash", "**/*.zsh",  # Bash
+                "**/*.toml",                     # TOML
+                "**/*.m",                        # MATLAB
+                "**/Makefile", "**/makefile", "**/*.mk", "**/*.make",  # Makefile
+                "**/*.json", "**/*.yaml", "**/*.yml", "**/*.txt"  # Other formats
+            ]
 
-        return await self._indexing_coordinator.process_directory(directory, patterns, exclude_patterns)
+        return await self._indexing_coordinator.process_directory(
+            directory, patterns, exclude_patterns
+        )
 
     # =============================================================================
     # Search Methods - Delegate to SearchService
