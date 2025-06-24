@@ -46,6 +46,10 @@ class ChunkType(Enum):
     CLOSURE = "closure"
     TRAIT = "trait"
     SCRIPT = "script"
+    OBJECT = "object"
+    COMPANION_OBJECT = "companion_object"
+    DATA_CLASS = "data_class"
+    EXTENSION_FUNCTION = "extension_function"
 
     # Documentation types
     HEADER_1 = "header_1"
@@ -101,6 +105,7 @@ class Language(Enum):
     TSX = "tsx"
     JSX = "jsx"
     GROOVY = "groovy"
+    KOTLIN = "kotlin"
 
     # Documentation languages
     MARKDOWN = "markdown"
@@ -132,6 +137,8 @@ class Language(Enum):
             '.groovy': cls.GROOVY,
             '.gvy': cls.GROOVY,
             '.gy': cls.GROOVY,
+            '.kt': cls.KOTLIN,
+            '.kts': cls.KOTLIN,
             '.md': cls.MARKDOWN,
             '.markdown': cls.MARKDOWN,
             '.json': cls.JSON,
@@ -155,14 +162,14 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN
         }
 
     @property
     def supports_classes(self) -> bool:
         """Return True if this language supports class definitions."""
         return self in {
-            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX, self.GROOVY
+            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX, self.GROOVY, self.KOTLIN
         }
 
     @property

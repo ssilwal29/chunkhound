@@ -24,6 +24,7 @@ try:
     from providers.parsing.typescript_parser import TypeScriptParser
     from providers.parsing.csharp_parser import CSharpParser
     from providers.parsing.groovy_parser import GroovyParser
+    from providers.parsing.kotlin_parser import KotlinParser
     from providers.parsing.markdown_parser import MarkdownParser
     from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
 
@@ -314,6 +315,13 @@ class ProviderRegistry:
                 logger.debug("Registered Groovy parser")
         except Exception as e:
             logger.warning(f"Failed to register Groovy parser: {e}")
+
+        try:
+            self.register_language_parser(Language.KOTLIN, KotlinParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered Kotlin parser")
+        except Exception as e:
+            logger.warning(f"Failed to register Kotlin parser: {e}")
 
         try:
             self.register_language_parser(Language.MARKDOWN, MarkdownParser)

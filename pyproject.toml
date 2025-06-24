@@ -46,6 +46,7 @@ dependencies = [
     "tiktoken>=0.9.0",
     "tqdm>=4.66.0",
     "tree-sitter-groovy>=0.1.2",
+    "tree-sitter-kotlin>=0.3.0",
 ]
 
 [project.optional-dependencies]
