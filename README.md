@@ -36,7 +36,14 @@ uv run chunkhound mcp --db /path/to/my-chunks.db
 
 ## AI Assistant Setup
 
-### Claude Desktop
+ChunkHound integrates with all major AI development tools. Choose your setup method:
+
+<details>
+<summary><strong>Method 1: Using <code>uv run</code> (Recommended)</strong></summary>
+
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
@@ -51,8 +58,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   }
 }
 ```
+</details>
 
-### Claude Code
+<details>
+<summary><strong>Claude Code</strong></summary>
+
 Add to `~/.claude.json`:
 ```json
 {
@@ -67,30 +77,233 @@ Add to `~/.claude.json`:
   }
 }
 ```
+</details>
 
-### VS Code
+<details>
+<summary><strong>VS Code</strong></summary>
+
 Add to `.vscode/mcp.json` in your project:
 ```json
 {
   "servers": {
     "chunkhound": {
       "command": "uv",
-      "args": ["run", "chunkhound", "mcp"]
+      "args": ["run", "chunkhound", "mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-key-here"
+      }
     }
   }
 }
 ```
+</details>
 
-### Cursor
+<details>
+<summary><strong>Cursor</strong></summary>
+
 Add to `.cursor/mcp.json` in your project:
 ```json
 {
   "chunkhound": {
     "command": "uv",
-    "args": ["run", "chunkhound", "mcp"]
+    "args": ["run", "chunkhound", "mcp"],
+    "env": {
+      "OPENAI_API_KEY": "sk-your-key-here"
+    }
   }
 }
 ```
+</details>
+
+<details>
+<summary><strong>Windsurf</strong></summary>
+
+Add to `~/.codeium/windsurf/mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "chunkhound": {
+      "command": "uv",
+      "args": ["run", "chunkhound", "mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Zed</strong></summary>
+
+Add to settings.json (Preferences > Open Settings):
+```json
+{
+  "context_servers": {
+    "chunkhound": {
+      "source": "custom",
+      "command": {
+        "path": "uv",
+        "args": ["run", "chunkhound", "mcp"],
+        "env": {
+          "OPENAI_API_KEY": "sk-your-key-here"
+        }
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>IntelliJ IDEA / PyCharm / WebStorm</strong> (2025.1+)</summary>
+
+Go to Settings > Tools > AI Assistant > Model Context Protocol (MCP) and add:
+- **Name**: chunkhound
+- **Command**: uv
+- **Arguments**: run chunkhound mcp
+- **Environment Variables**: OPENAI_API_KEY=sk-your-key-here
+- **Working Directory**: (leave empty or set to project root)
+</details>
+
+</details>
+
+<details>
+<summary><strong>Method 2: Using Standalone Binary</strong></summary>
+
+First, install the binary from [GitHub Releases](https://github.com/ofriw/chunkhound/releases).
+
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "chunkhound": {
+      "command": "chunkhound",
+      "args": ["mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "chunkhound": {
+      "command": "chunkhound",
+      "args": ["mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>VS Code</strong></summary>
+
+```json
+{
+  "servers": {
+    "chunkhound": {
+      "command": "chunkhound",
+      "args": ["mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Cursor</strong></summary>
+
+```json
+{
+  "chunkhound": {
+    "command": "chunkhound",
+    "args": ["mcp"],
+    "env": {
+      "OPENAI_API_KEY": "sk-your-key-here"
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Windsurf</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "chunkhound": {
+      "command": "chunkhound",
+      "args": ["mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Zed</strong></summary>
+
+```json
+{
+  "context_servers": {
+    "chunkhound": {
+      "source": "custom",
+      "command": {
+        "path": "chunkhound",
+        "args": ["mcp"],
+        "env": {
+          "OPENAI_API_KEY": "sk-your-key-here"
+        }
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>IntelliJ IDEA / PyCharm / WebStorm</strong> (2025.1+)</summary>
+
+- **Name**: chunkhound
+- **Command**: chunkhound
+- **Arguments**: mcp
+- **Environment Variables**: OPENAI_API_KEY=sk-your-key-here
+- **Working Directory**: (leave empty or set to project root)
+</details>
+
+</details>
+
+<details>
+<summary><strong>Troubleshooting</strong></summary>
+
+- **For Node.js environments**: Use Node.js v18+ 
+- **Module resolution issues**: Try `uv tool install chunkhound` first
+- **Permission errors**: Ensure the binary is executable: `chmod +x chunkhound`
+- **Path issues**: Make sure `uv` or `chunkhound` binary is in your PATH
+- **Environment variables**: Set `OPENAI_API_KEY` in your shell profile if not using the `env` config
+</details>
 
 ## What You Get
 
