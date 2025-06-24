@@ -33,6 +33,7 @@ try:
     from providers.parsing.c_parser import CParser
     from providers.parsing.cpp_parser import CppParser
     from providers.parsing.matlab_parser import MatlabParser
+    from providers.parsing.rust_parser import RustParser
 
     # Import services
     from services.base_service import BaseService
@@ -59,6 +60,7 @@ except ImportError:
     from chunkhound.providers.parsing.c_parser import CParser
     from chunkhound.providers.parsing.cpp_parser import CppParser
     from chunkhound.providers.parsing.matlab_parser import MatlabParser
+    from chunkhound.providers.parsing.rust_parser import RustParser
 
     # Import services
     from chunkhound.services.base_service import BaseService
@@ -369,6 +371,13 @@ class ProviderRegistry:
                 logger.debug("Registered Matlab parser")
         except Exception as e:
             logger.warning(f"Failed to register Matlab parser: {e}")
+
+        try:
+            self.register_language_parser(Language.RUST, RustParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered Rust parser")
+        except Exception as e:
+            logger.warning(f"Failed to register Rust parser: {e}")
 
         try:
             self.register_language_parser(Language.MARKDOWN, MarkdownParser)

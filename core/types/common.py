@@ -117,6 +117,7 @@ class Language(Enum):
     GROOVY = "groovy"
     KOTLIN = "kotlin"
     GO = "go"
+    RUST = "rust"
     BASH = "bash"
     MAKEFILE = "makefile"
     C = "c"
@@ -187,6 +188,7 @@ class Language(Enum):
             '.hpp': cls.CPP,
             '.hxx': cls.CPP,
             '.h++': cls.CPP,
+            '.rs': cls.RUST,
             '.m': cls.MATLAB,
         }
 
@@ -205,7 +207,7 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.GO, self.BASH, self.MAKEFILE, self.C, self.CPP, self.MATLAB
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.GO, self.RUST, self.BASH, self.MAKEFILE, self.C, self.CPP, self.MATLAB
         }
 
     @property
