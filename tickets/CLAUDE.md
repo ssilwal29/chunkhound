@@ -15,3 +15,6 @@ Description of what was done; why it didn't work; what we learned; what work is 
 
 <insert more updates>
 ```
+
+## Rules
+- Close tickets by moving them to tickets/closed/
