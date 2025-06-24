@@ -31,6 +31,7 @@ try:
     from providers.parsing.toml_parser import TomlParser
     from providers.parsing.c_parser import CParser
     from providers.parsing.cpp_parser import CppParser
+    from providers.parsing.matlab_parser import MatlabParser
 
     # Import services
     from services.base_service import BaseService
@@ -55,6 +56,7 @@ except ImportError:
     from chunkhound.providers.parsing.toml_parser import TomlParser
     from chunkhound.providers.parsing.c_parser import CParser
     from chunkhound.providers.parsing.cpp_parser import CppParser
+    from chunkhound.providers.parsing.matlab_parser import MatlabParser
 
     # Import services
     from chunkhound.services.base_service import BaseService
@@ -351,6 +353,13 @@ class ProviderRegistry:
                 logger.debug("Registered C++ parser")
         except Exception as e:
             logger.warning(f"Failed to register C++ parser: {e}")
+
+        try:
+            self.register_language_parser(Language.MATLAB, MatlabParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered Matlab parser")
+        except Exception as e:
+            logger.warning(f"Failed to register Matlab parser: {e}")
 
         try:
             self.register_language_parser(Language.MARKDOWN, MarkdownParser)
