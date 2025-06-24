@@ -25,6 +25,7 @@ try:
     from providers.parsing.csharp_parser import CSharpParser
     from providers.parsing.groovy_parser import GroovyParser
     from providers.parsing.kotlin_parser import KotlinParser
+    from providers.parsing.go_parser import GoParser
     from providers.parsing.bash_parser import BashParser
     from providers.parsing.markdown_parser import MarkdownParser
     from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
@@ -50,6 +51,7 @@ except ImportError:
     from chunkhound.providers.parsing.typescript_parser import TypeScriptParser
     from chunkhound.providers.parsing.csharp_parser import CSharpParser
     from chunkhound.providers.parsing.groovy_parser import GroovyParser
+    from chunkhound.providers.parsing.go_parser import GoParser
     from chunkhound.providers.parsing.bash_parser import BashParser
     from chunkhound.providers.parsing.markdown_parser import MarkdownParser
     from chunkhound.providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
@@ -332,6 +334,13 @@ class ProviderRegistry:
                 logger.debug("Registered Kotlin parser")
         except Exception as e:
             logger.warning(f"Failed to register Kotlin parser: {e}")
+
+        try:
+            self.register_language_parser(Language.GO, GoParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered Go parser")
+        except Exception as e:
+            logger.warning(f"Failed to register Go parser: {e}")
 
         try:
             self.register_language_parser(Language.BASH, BashParser)

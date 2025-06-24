@@ -116,6 +116,7 @@ class Language(Enum):
     JSX = "jsx"
     GROOVY = "groovy"
     KOTLIN = "kotlin"
+    GO = "go"
     BASH = "bash"
     MAKEFILE = "makefile"
     C = "c"
@@ -165,6 +166,7 @@ class Language(Enum):
             '.gy': cls.GROOVY,
             '.kt': cls.KOTLIN,
             '.kts': cls.KOTLIN,
+            '.go': cls.GO,
             '.sh': cls.BASH,
             '.bash': cls.BASH,
             '.zsh': cls.BASH,
@@ -203,14 +205,14 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH, self.MAKEFILE, self.C, self.CPP, self.MATLAB
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.GO, self.BASH, self.MAKEFILE, self.C, self.CPP, self.MATLAB
         }
 
     @property
     def supports_classes(self) -> bool:
         """Return True if this language supports class definitions."""
         return self in {
-            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX, self.GROOVY, self.KOTLIN, self.CPP, self.MATLAB
+            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX, self.GROOVY, self.KOTLIN, self.GO, self.CPP, self.MATLAB
         }
 
     @property
