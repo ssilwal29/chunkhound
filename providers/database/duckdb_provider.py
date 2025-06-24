@@ -1,35 +1,34 @@
 """DuckDB provider implementation for ChunkHound - concrete database provider using DuckDB."""
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union, TYPE_CHECKING
 import importlib
+import os
 import time
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import duckdb
 from loguru import logger
-import os
-from tqdm import tqdm
-
-from core.models import File, Chunk, Embedding
-from core.types import ChunkType, Language
 
 # Import existing components that will be used by the provider
 from chunkhound.chunker import Chunker, IncrementalChunker
 from chunkhound.embeddings import EmbeddingManager
 from chunkhound.file_discovery_cache import FileDiscoveryCache
+from core.models import Chunk, Embedding, File
+from core.types import ChunkType, Language
+
 # Avoid circular import - use lazy imports for registry functions
 
 # Type hinting only
 if TYPE_CHECKING:
+    from services.embedding_service import EmbeddingService
     from services.indexing_coordinator import IndexingCoordinator
     from services.search_service import SearchService
-    from services.embedding_service import EmbeddingService
 
 
 class DuckDBProvider:
     """DuckDB implementation of DatabaseProvider protocol."""
 
-    def __init__(self, db_path: Union[Path, str], embedding_manager: Optional[EmbeddingManager] = None):
+    def __init__(self, db_path: Path | str, embedding_manager: EmbeddingManager | None = None):
         """Initialize DuckDB provider.
 
         Args:
@@ -37,21 +36,21 @@ class DuckDBProvider:
             embedding_manager: Optional embedding manager for vector generation
         """
         self._db_path = db_path
-        self.connection: Optional[Any] = None
+        self.connection: Any | None = None
         self._services_initialized = False
         self.embedding_manager = embedding_manager
 
         # Service layer components and legacy chunker instances
-        self._indexing_coordinator: Optional['IndexingCoordinator'] = None
-        self._search_service: Optional['SearchService'] = None
-        self._embedding_service: Optional['EmbeddingService'] = None
-        self._chunker: Optional[Chunker] = None
-        self._incremental_chunker: Optional[IncrementalChunker] = None
+        self._indexing_coordinator: IndexingCoordinator | None = None
+        self._search_service: SearchService | None = None
+        self._embedding_service: EmbeddingService | None = None
+        self._chunker: Chunker | None = None
+        self._incremental_chunker: IncrementalChunker | None = None
 
         # File discovery cache for performance optimization
         self._file_discovery_cache = FileDiscoveryCache()
 
-    def _extract_file_id(self, file_record: Union[Dict[str, Any], File]) -> Optional[int]:
+    def _extract_file_id(self, file_record: dict[str, Any] | File) -> int | None:
         """Safely extract file ID from either dict or File model."""
         if isinstance(file_record, File):
             return file_record.id
@@ -61,7 +60,7 @@ class DuckDBProvider:
             return None
 
     @property
-    def db_path(self) -> Union[Path, str]:
+    def db_path(self) -> Path | str:
         """Database connection path or identifier."""
         return self._db_path
 
@@ -421,7 +420,7 @@ class DuckDBProvider:
             logger.error(f"Failed to migrate legacy embeddings table: {e}")
             raise
 
-    def _get_all_embedding_tables(self) -> List[str]:
+    def _get_all_embedding_tables(self) -> list[str]:
         """Get list of all embedding tables (dimension-specific)."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -501,7 +500,7 @@ class DuckDBProvider:
             logger.error(f"Failed to drop HNSW index {index_name}: {e}")
             raise
 
-    def get_existing_vector_indexes(self) -> List[Dict[str, Any]]:
+    def get_existing_vector_indexes(self) -> list[dict[str, Any]]:
         """Get list of existing HNSW vector indexes on embeddings table."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -679,7 +678,7 @@ class DuckDBProvider:
                     return existing["id"]
             raise
 
-    def get_file_by_path(self, path: str, as_model: bool = False) -> Optional[Union[Dict[str, Any], File]]:
+    def get_file_by_path(self, path: str, as_model: bool = False) -> dict[str, Any] | File | None:
         """Get file record by path."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -719,7 +718,7 @@ class DuckDBProvider:
             logger.error(f"Failed to get file by path {path}: {e}")
             return None
 
-    def get_file_by_id(self, file_id: int, as_model: bool = False) -> Optional[Union[Dict[str, Any], File]]:
+    def get_file_by_id(self, file_id: int, as_model: bool = False) -> dict[str, Any] | File | None:
         """Get file record by ID."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -759,7 +758,7 @@ class DuckDBProvider:
             logger.error(f"Failed to get file by ID {file_id}: {e}")
             return None
 
-    def update_file(self, file_id: int, size_bytes: Optional[int] = None, mtime: Optional[float] = None) -> None:
+    def update_file(self, file_id: int, size_bytes: int | None = None, mtime: float | None = None) -> None:
         """Update file record with new values.
 
         Args:
@@ -866,7 +865,7 @@ class DuckDBProvider:
             logger.error(f"Failed to insert chunk: {e}")
             raise
 
-    def insert_chunks_batch(self, chunks: List[Chunk]) -> List[int]:
+    def insert_chunks_batch(self, chunks: list[Chunk]) -> list[int]:
         """Insert multiple chunks in batch using executemany for optimal performance."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -919,7 +918,7 @@ class DuckDBProvider:
             logger.error(f"Failed to insert chunks batch: {e}")
             raise
 
-    def get_chunk_by_id(self, chunk_id: int, as_model: bool = False) -> Optional[Union[Dict[str, Any], Chunk]]:
+    def get_chunk_by_id(self, chunk_id: int, as_model: bool = False) -> dict[str, Any] | Chunk | None:
         """Get chunk record by ID."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -970,7 +969,7 @@ class DuckDBProvider:
             logger.error(f"Failed to get chunk by ID {chunk_id}: {e}")
             return None
 
-    def get_chunks_by_file_id(self, file_id: int, as_model: bool = False) -> List[Union[Dict[str, Any], Chunk]]:
+    def get_chunks_by_file_id(self, file_id: int, as_model: bool = False) -> list[dict[str, Any] | Chunk]:
         """Get all chunks for a specific file."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1114,7 +1113,7 @@ class DuckDBProvider:
             logger.error(f"Failed to insert embedding: {e}")
             raise
 
-    def insert_embeddings_batch(self, embeddings_data: List[Dict], batch_size: Optional[int] = None, connection=None) -> int:
+    def insert_embeddings_batch(self, embeddings_data: list[dict], batch_size: int | None = None, connection=None) -> int:
         """Insert multiple embedding vectors with HNSW index optimization.
 
         For large batches (>= batch_size threshold), uses the Context7-recommended optimization:
@@ -1204,7 +1203,7 @@ class DuckDBProvider:
                     except Exception as e:
                         logger.warning(f"Could not drop index {index_info['index_name']}: {e}")
 
-                
+
                 # Step 2: Separate new vs existing embeddings for optimal INSERT strategy
                 chunk_ids = [emb['chunk_id'] for emb in embeddings_data]
                 existing_chunk_ids = self.get_existing_embeddings(chunk_ids, provider, model, table_name)
@@ -1245,7 +1244,7 @@ class DuckDBProvider:
                         logger.error(f"Fast VALUES INSERT failed: {e}")
                         raise
 
-                
+
                 # Step 4: INSERT OR REPLACE only for updates using VALUES approach
                 if update_embeddings:
                     update_start = time.time()
@@ -1274,7 +1273,7 @@ class DuckDBProvider:
 
                 # Step 5: Recreate HNSW index for fast similarity search
                 if dropped_indexes:
-                    logger.debug(f"📈 Recreating HNSW index for fast similarity search")
+                    logger.debug("📈 Recreating HNSW index for fast similarity search")
                     index_start = time.time()
                     for index_info in dropped_indexes:
                         try:
@@ -1334,12 +1333,12 @@ class DuckDBProvider:
 
         except Exception as e:
             logger.error(f"💥 CRITICAL: Optimized batch insert failed: {e}")
-            logger.warning(f"⚠️ This indicates a critical issue with VALUES clause approach!")
+            logger.warning("⚠️ This indicates a critical issue with VALUES clause approach!")
             raise
         finally:
             pass
 
-    def get_embedding_by_chunk_id(self, chunk_id: int, provider: str, model: str) -> Optional[Embedding]:
+    def get_embedding_by_chunk_id(self, chunk_id: int, provider: str, model: str) -> Embedding | None:
         """Get embedding for specific chunk, provider, and model."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1369,7 +1368,7 @@ class DuckDBProvider:
             logger.error(f"Failed to get embedding for chunk {chunk_id}: {e}")
             return None
 
-    def get_existing_embeddings(self, chunk_ids: List[int], provider: str, model: str, table_name: str = "embeddings_1536") -> Set[int]:
+    def get_existing_embeddings(self, chunk_ids: list[int], provider: str, model: str, table_name: str = "embeddings_1536") -> set[int]:
         """Get set of chunk IDs that already have embeddings for given provider/model."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1410,12 +1409,12 @@ class DuckDBProvider:
 
     def search_semantic(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         provider: str,
         model: str,
         limit: int = 10,
-        threshold: Optional[float] = None
-    ) -> List[Dict[str, Any]]:
+        threshold: float | None = None
+    ) -> list[dict[str, Any]]:
         """Perform semantic vector search using HNSW index with multi-dimension support."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1479,7 +1478,7 @@ class DuckDBProvider:
             logger.error(f"Failed to perform semantic search: {e}")
             return []
 
-    def search_regex(self, pattern: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def search_regex(self, pattern: str, limit: int = 10) -> list[dict[str, Any]]:
         """Perform regex search on code content."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1522,7 +1521,7 @@ class DuckDBProvider:
             logger.error(f"Failed to perform regex search: {e}")
             return []
 
-    def search_text(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def search_text(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Perform full-text search on code content."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1566,7 +1565,7 @@ class DuckDBProvider:
             logger.error(f"Failed to perform text search: {e}")
             return []
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> dict[str, int]:
         """Get database statistics (file count, chunk count, etc.)."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1611,7 +1610,7 @@ class DuckDBProvider:
             logger.error(f"Failed to get database stats: {e}")
             return {"files": 0, "chunks": 0, "embeddings": 0, "providers": 0}
 
-    def get_file_stats(self, file_id: int) -> Dict[str, Any]:
+    def get_file_stats(self, file_id: int) -> dict[str, Any]:
         """Get statistics for a specific file."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1664,7 +1663,7 @@ class DuckDBProvider:
             logger.error(f"Failed to get file stats for {file_id}: {e}")
             return {}
 
-    def get_provider_stats(self, provider: str, model: str) -> Dict[str, Any]:
+    def get_provider_stats(self, provider: str, model: str) -> dict[str, Any]:
         """Get statistics for a specific embedding provider/model."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1717,7 +1716,7 @@ class DuckDBProvider:
             logger.error(f"Failed to get provider stats for {provider}/{model}: {e}")
             return {"provider": provider, "model": model, "embeddings": 0, "files": 0, "dimensions": 0}
 
-    def execute_query(self, query: str, params: Optional[List[Any]] = None) -> List[Dict[str, Any]]:
+    def execute_query(self, query: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
         """Execute a SQL query and return results."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1761,7 +1760,7 @@ class DuckDBProvider:
 
         self.connection.execute("ROLLBACK")
 
-    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> Dict[str, Any]:
+    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> dict[str, Any]:
         """Process a file end-to-end: parse, chunk, and store in database.
 
         Delegates to IndexingCoordinator for actual processing.
@@ -1802,7 +1801,7 @@ class DuckDBProvider:
             logger.error(f"Failed to process file {file_path}: {e}")
             return {"status": "error", "error": str(e), "chunks": 0}
 
-    async def process_file_incremental(self, file_path: Path) -> Dict[str, Any]:
+    async def process_file_incremental(self, file_path: Path) -> dict[str, Any]:
         """Process a file with incremental parsing and differential chunking.
 
         Uses the IndexingCoordinator for parsing, chunking, and embeddings.
@@ -1884,7 +1883,7 @@ class DuckDBProvider:
                 # IndexingCoordinator already handled transaction safety
                 # No additional chunk management needed
                 chunks_deleted = result.get("chunks_deleted", 0)
-                logger.debug(f"Incremental processing - IndexingCoordinator handled transaction safety")
+                logger.debug("Incremental processing - IndexingCoordinator handled transaction safety")
 
                 return {
                     "status": "success",
@@ -1898,7 +1897,7 @@ class DuckDBProvider:
                     "incremental": True
                 }
             elif result.get("status") == "up_to_date":
-                logger.debug(f"Incremental processing - File reported as up-to-date by IndexingCoordinator")
+                logger.debug("Incremental processing - File reported as up-to-date by IndexingCoordinator")
                 # File unchanged, get existing chunk count
                 if existing_file:
                     file_id = existing_file["id"] if isinstance(existing_file, dict) else existing_file.id
@@ -1923,7 +1922,7 @@ class DuckDBProvider:
                         "incremental": True
                     }
                 else:
-                    logger.debug(f"Incremental processing - Up-to-date but no existing file record found")
+                    logger.debug("Incremental processing - Up-to-date but no existing file record found")
                     return {
                         "status": "up_to_date",
                         "chunks": 0,
@@ -1939,7 +1938,7 @@ class DuckDBProvider:
             logger.error(f"Failed to process file incrementally {file_path}: {e}")
             return {"status": "error", "error": str(e), "chunks": 0, "incremental": True}
 
-    async def _fallback_process_file(self, file_path: Path) -> Dict[str, Any]:
+    async def _fallback_process_file(self, file_path: Path) -> dict[str, Any]:
         """Fallback implementation when IndexingCoordinator is unavailable.
 
         Args:
@@ -2024,9 +2023,9 @@ class DuckDBProvider:
     async def process_directory(
         self,
         directory: Path,
-        patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None
+    ) -> dict[str, Any]:
         """Process all supported files in a directory."""
         try:
             if patterns is None:
@@ -2107,7 +2106,7 @@ class DuckDBProvider:
             logger.error(f"Failed to process directory {directory}: {e}")
             return {"status": "error", "error": str(e), "files_processed": 0}
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Perform health check and return status information."""
         status = {
             "provider": "duckdb",
@@ -2164,7 +2163,7 @@ class DuckDBProvider:
 
         return status
 
-    def get_connection_info(self) -> Dict[str, Any]:
+    def get_connection_info(self) -> dict[str, Any]:
         """Get information about the database connection."""
         return {
             "provider": "duckdb",

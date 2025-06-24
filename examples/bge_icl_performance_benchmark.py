@@ -6,22 +6,21 @@ Comprehensive performance benchmarking tool for BGE-IN-ICL deployments.
 Measures throughput, latency, cache efficiency, and adaptive batching performance.
 """
 
-import asyncio
-import time
-import statistics
-import json
-import csv
 import argparse
-import sys
-import os
-from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
-from datetime import datetime
+import asyncio
+import csv
+import json
 import logging
+import statistics
+import sys
+import time
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from typing import Any
 
 # Import BGE-IN-ICL components
 try:
-    from chunkhound.embeddings import create_bge_in_icl_provider, BGEInICLProvider
+    from chunkhound.embeddings import BGEInICLProvider, create_bge_in_icl_provider
 except ImportError:
     print("Error: chunkhound package not found. Please install chunkhound first.")
     sys.exit(1)
@@ -37,9 +36,9 @@ logger = logging.getLogger(__name__)
 class BenchmarkConfig:
     """Configuration for benchmark tests."""
     server_url: str
-    api_key: Optional[str] = None
-    batch_sizes: List[int] = None
-    languages: List[str] = None
+    api_key: str | None = None
+    batch_sizes: list[int] = None
+    languages: list[str] = None
     runs_per_test: int = 5
     warmup_runs: int = 2
     timeout: int = 300
@@ -47,7 +46,7 @@ class BenchmarkConfig:
     adaptive_batching: bool = True
     context_cache_size: int = 100
     output_format: str = 'json'  # json, csv, both
-    output_file: Optional[str] = None
+    output_file: str | None = None
     verbose: bool = False
 
     def __post_init__(self):
@@ -80,10 +79,10 @@ class BGEICLBenchmark:
 
     def __init__(self, config: BenchmarkConfig):
         self.config = config
-        self.results: List[BenchmarkResult] = []
+        self.results: list[BenchmarkResult] = []
         self.test_data = self._generate_test_data()
 
-    def _generate_test_data(self) -> Dict[str, List[str]]:
+    def _generate_test_data(self) -> dict[str, list[str]]:
         """Generate test data for different programming languages."""
         return {
             'auto': [
@@ -212,27 +211,27 @@ class BGEICLBenchmark:
         )
 
     async def run_single_test(
-        self, 
-        provider: BGEInICLProvider, 
-        texts: List[str], 
+        self,
+        provider: BGEInICLProvider,
+        texts: list[str],
         test_name: str
-    ) -> Tuple[float, Dict[str, Any]]:
+    ) -> tuple[float, dict[str, Any]]:
         """Run a single benchmark test and return timing and metrics."""
         start_time = time.time()
-        
+
         try:
             embeddings = await provider.embed(texts)
             elapsed = time.time() - start_time
-            
+
             # Verify results
             if len(embeddings) != len(texts):
                 raise ValueError(f"Expected {len(texts)} embeddings, got {len(embeddings)}")
-            
+
             # Get performance metrics
             metrics = provider.get_performance_metrics()
-            
+
             return elapsed, metrics
-            
+
         except Exception as e:
             elapsed = time.time() - start_time
             logger.error(f"Test {test_name} failed: {e}")
@@ -242,12 +241,12 @@ class BGEICLBenchmark:
         """Benchmark a specific batch size for a language."""
         test_name = f"batch_size_{batch_size}"
         logger.info(f"Benchmarking {language} with batch size {batch_size}")
-        
+
         provider = await self.create_provider(language=language, batch_size=batch_size)
-        
+
         # Get test texts
         available_texts = self.test_data.get(language, self.test_data['auto'])
-        
+
         # Create batch by repeating texts if necessary
         if batch_size <= len(available_texts):
             texts = available_texts[:batch_size]
@@ -257,51 +256,51 @@ class BGEICLBenchmark:
             while len(texts) < batch_size:
                 texts.extend(available_texts)
             texts = texts[:batch_size]
-        
+
         # Add some variation to avoid cache hits
         texts = [f"// Batch {batch_size} - {i}\n{text}" for i, text in enumerate(texts)]
-        
+
         # Warmup runs
         for i in range(self.config.warmup_runs):
             try:
                 await self.run_single_test(provider, texts[:min(5, len(texts))], f"warmup_{i}")
             except Exception as e:
                 logger.warning(f"Warmup run {i} failed: {e}")
-        
+
         # Actual benchmark runs
         times = []
         metrics_list = []
         failed_runs = 0
-        
+
         for run in range(self.config.runs_per_test):
             try:
                 elapsed, metrics = await self.run_single_test(provider, texts, f"{test_name}_run_{run}")
                 times.append(elapsed)
                 metrics_list.append(metrics)
-                
+
                 if self.config.verbose:
                     throughput = len(texts) / elapsed
                     cache_hit_rate = metrics.get('cache_hit_rate', 0)
                     logger.info(f"  Run {run + 1}: {elapsed:.2f}s, {throughput:.1f} emb/s, cache: {cache_hit_rate:.1%}")
-                
+
             except Exception as e:
                 logger.error(f"Run {run} failed: {e}")
                 failed_runs += 1
-        
+
         if not times:
             raise ValueError(f"All runs failed for batch size {batch_size}")
-        
+
         # Calculate statistics
         avg_time = statistics.mean(times)
         min_time = min(times)
         max_time = max(times)
         std_time = statistics.stdev(times) if len(times) > 1 else 0
         throughput = batch_size / avg_time
-        
+
         # Average metrics across successful runs
         avg_cache_hit_rate = statistics.mean([m.get('cache_hit_rate', 0) for m in metrics_list])
         avg_current_batch_size = statistics.mean([m.get('current_batch_size', batch_size) for m in metrics_list])
-        
+
         return BenchmarkResult(
             test_name=test_name,
             language=language,
@@ -320,11 +319,11 @@ class BGEICLBenchmark:
             timestamp=time.time()
         )
 
-    async def benchmark_language(self, language: str) -> List[BenchmarkResult]:
+    async def benchmark_language(self, language: str) -> list[BenchmarkResult]:
         """Benchmark all batch sizes for a specific language."""
         logger.info(f"Benchmarking language: {language}")
         results = []
-        
+
         for batch_size in self.config.batch_sizes:
             try:
                 result = await self.benchmark_batch_size(language, batch_size)
@@ -332,34 +331,34 @@ class BGEICLBenchmark:
                 logger.info(f"  Batch {batch_size}: {result.throughput:.1f} emb/s")
             except Exception as e:
                 logger.error(f"  Batch {batch_size} failed: {e}")
-        
+
         return results
 
-    async def run_all_benchmarks(self) -> List[BenchmarkResult]:
+    async def run_all_benchmarks(self) -> list[BenchmarkResult]:
         """Run comprehensive benchmarks for all configurations."""
         logger.info("Starting BGE-IN-ICL performance benchmarks")
         logger.info(f"Server: {self.config.server_url}")
         logger.info(f"Languages: {self.config.languages}")
         logger.info(f"Batch sizes: {self.config.batch_sizes}")
         logger.info(f"Runs per test: {self.config.runs_per_test}")
-        
+
         all_results = []
-        
+
         for language in self.config.languages:
             try:
                 results = await self.benchmark_language(language)
                 all_results.extend(results)
             except Exception as e:
                 logger.error(f"Language {language} benchmarks failed: {e}")
-        
+
         self.results = all_results
         return all_results
 
-    def analyze_results(self) -> Dict[str, Any]:
+    def analyze_results(self) -> dict[str, Any]:
         """Analyze benchmark results and generate insights."""
         if not self.results:
             return {}
-        
+
         analysis = {
             'summary': {
                 'total_tests': len(self.results),
@@ -382,11 +381,11 @@ class BGEICLBenchmark:
                 'worst_cache_hit_rate': min(r.cache_hit_rate for r in self.results)
             }
         }
-        
+
         # Find optimal configurations
         best_throughput_result = max(self.results, key=lambda r: r.throughput)
         best_latency_result = min(self.results, key=lambda r: r.avg_response_time)
-        
+
         analysis['recommendations'] = {
             'best_throughput_config': {
                 'language': best_throughput_result.language,
@@ -401,7 +400,7 @@ class BGEICLBenchmark:
                 'latency': best_latency_result.avg_response_time
             }
         }
-        
+
         # Language-specific analysis
         analysis['by_language'] = {}
         for language in set(r.language for r in self.results):
@@ -412,20 +411,20 @@ class BGEICLBenchmark:
                 'optimal_batch_size': max(lang_results, key=lambda r: r.throughput).batch_size,
                 'avg_cache_hit_rate': statistics.mean([r.cache_hit_rate for r in lang_results])
             }
-        
+
         return analysis
 
-    def save_results(self, filename: Optional[str] = None) -> str:
+    def save_results(self, filename: str | None = None) -> str:
         """Save benchmark results to file."""
         if filename is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"bge_icl_benchmark_{timestamp}"
-        
+
         # Remove extension if provided
         base_filename = filename.replace('.json', '').replace('.csv', '')
-        
+
         saved_files = []
-        
+
         # Save JSON format
         if self.config.output_format in ['json', 'both']:
             json_file = f"{base_filename}.json"
@@ -439,15 +438,15 @@ class BGEICLBenchmark:
                     'total_embeddings': sum(r.batch_size * r.successful_runs for r in self.results)
                 }
             }
-            
+
             with open(json_file, 'w') as f:
                 json.dump(data, f, indent=2)
             saved_files.append(json_file)
-        
+
         # Save CSV format
         if self.config.output_format in ['csv', 'both']:
             csv_file = f"{base_filename}.csv"
-            
+
             with open(csv_file, 'w', newline='') as f:
                 if self.results:
                     writer = csv.DictWriter(f, fieldnames=asdict(self.results[0]).keys())
@@ -455,7 +454,7 @@ class BGEICLBenchmark:
                     for result in self.results:
                         writer.writerow(asdict(result))
             saved_files.append(csv_file)
-        
+
         return saved_files
 
     def print_summary(self):
@@ -463,13 +462,13 @@ class BGEICLBenchmark:
         if not self.results:
             print("No benchmark results available.")
             return
-        
+
         analysis = self.analyze_results()
-        
+
         print("\n" + "="*80)
         print("BGE-IN-ICL PERFORMANCE BENCHMARK RESULTS")
         print("="*80)
-        
+
         # Summary statistics
         summary = analysis['summary']
         print(f"Total Tests: {summary['total_tests']}")
@@ -477,32 +476,32 @@ class BGEICLBenchmark:
         print(f"Batch Sizes: {summary['batch_sizes_tested']}")
         print(f"Successful Runs: {summary['total_successful_runs']}")
         print(f"Failed Runs: {summary['total_failed_runs']}")
-        
+
         # Performance overview
         perf = analysis['performance']
-        print(f"\nPerformance Overview:")
+        print("\nPerformance Overview:")
         print(f"  Best Throughput: {perf['best_throughput']:.1f} embeddings/sec")
         print(f"  Average Throughput: {perf['avg_throughput']:.1f} embeddings/sec")
         print(f"  Best Latency: {perf['best_latency']:.3f} seconds")
         print(f"  Average Latency: {perf['avg_latency']:.3f} seconds")
-        
+
         # Cache performance
         cache = analysis['cache_performance']
-        print(f"\nCache Performance:")
+        print("\nCache Performance:")
         print(f"  Average Hit Rate: {cache['avg_cache_hit_rate']:.1%}")
         print(f"  Best Hit Rate: {cache['best_cache_hit_rate']:.1%}")
-        
+
         # Recommendations
         recommendations = analysis['recommendations']
-        print(f"\nRecommendations:")
+        print("\nRecommendations:")
         best_throughput = recommendations['best_throughput_config']
         print(f"  For Maximum Throughput: {best_throughput['language']} with batch size {best_throughput['batch_size']} ({best_throughput['throughput']:.1f} emb/s)")
-        
+
         best_latency = recommendations['best_latency_config']
         print(f"  For Minimum Latency: {best_latency['language']} with batch size {best_latency['batch_size']} ({best_latency['latency']:.3f}s)")
-        
+
         # Language breakdown
-        print(f"\nLanguage Performance:")
+        print("\nLanguage Performance:")
         for language, lang_data in analysis['by_language'].items():
             print(f"  {language:.<20} Best: {lang_data['best_throughput']:.1f} emb/s (batch {lang_data['optimal_batch_size']})")
 
@@ -510,17 +509,17 @@ class BGEICLBenchmark:
 def create_parser() -> argparse.ArgumentParser:
     """Create command line argument parser."""
     parser = argparse.ArgumentParser(description="BGE-IN-ICL Performance Benchmark Tool")
-    
+
     parser.add_argument(
         "server_url",
         help="BGE-IN-ICL server URL (e.g., http://localhost:8080)"
     )
-    
+
     parser.add_argument(
         "--api-key",
         help="API key for authentication"
     )
-    
+
     parser.add_argument(
         "--batch-sizes",
         nargs="+",
@@ -528,72 +527,72 @@ def create_parser() -> argparse.ArgumentParser:
         default=[1, 5, 10, 25, 50, 100],
         help="Batch sizes to test (default: 1 5 10 25 50 100)"
     )
-    
+
     parser.add_argument(
         "--languages",
         nargs="+",
         default=['auto', 'python', 'typescript', 'java', 'csharp'],
         help="Languages to test (default: auto python typescript java csharp)"
     )
-    
+
     parser.add_argument(
         "--runs",
         type=int,
         default=5,
         help="Number of runs per test (default: 5)"
     )
-    
+
     parser.add_argument(
         "--warmup-runs",
         type=int,
         default=2,
         help="Number of warmup runs (default: 2)"
     )
-    
+
     parser.add_argument(
         "--timeout",
         type=int,
         default=300,
         help="Request timeout in seconds (default: 300)"
     )
-    
+
     parser.add_argument(
         "--disable-icl",
         action="store_true",
         help="Disable in-context learning"
     )
-    
+
     parser.add_argument(
         "--disable-adaptive-batching",
         action="store_true",
         help="Disable adaptive batching"
     )
-    
+
     parser.add_argument(
         "--cache-size",
         type=int,
         default=100,
         help="Context cache size (default: 100)"
     )
-    
+
     parser.add_argument(
         "--output-format",
         choices=['json', 'csv', 'both'],
         default='json',
         help="Output format (default: json)"
     )
-    
+
     parser.add_argument(
         "--output-file",
         help="Output file name (without extension)"
     )
-    
+
     parser.add_argument(
         "--verbose",
         action="store_true",
         help="Verbose output"
     )
-    
+
     return parser
 
 
@@ -601,7 +600,7 @@ async def main():
     """Main entry point for the benchmark tool."""
     parser = create_parser()
     args = parser.parse_args()
-    
+
     # Create benchmark configuration
     config = BenchmarkConfig(
         server_url=args.server_url,
@@ -618,35 +617,35 @@ async def main():
         output_file=args.output_file,
         verbose=args.verbose
     )
-    
+
     # Set logging level based on verbosity
     if config.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     # Create and run benchmark
     benchmark = BGEICLBenchmark(config)
-    
+
     try:
         # Run benchmarks
         start_time = time.time()
         results = await benchmark.run_all_benchmarks()
         total_time = time.time() - start_time
-        
+
         if not results:
             print("No benchmark results generated.")
             return 1
-        
+
         # Print summary
         benchmark.print_summary()
-        
+
         print(f"\nBenchmark completed in {total_time:.1f} seconds")
-        
+
         # Save results
         saved_files = benchmark.save_results(config.output_file)
         print(f"\nResults saved to: {', '.join(saved_files)}")
-        
+
         return 0
-        
+
     except KeyboardInterrupt:
         print("\nBenchmark interrupted by user.")
         return 1

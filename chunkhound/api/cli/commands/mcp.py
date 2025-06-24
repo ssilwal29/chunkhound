@@ -3,6 +3,7 @@
 import argparse
 import os
 from pathlib import Path
+from typing import Any, cast
 
 
 def mcp_command(args: argparse.Namespace) -> None:
@@ -37,7 +38,7 @@ def mcp_command(args: argparse.Namespace) -> None:
     sys.exit(process.returncode)
 
 
-def add_mcp_subparser(subparsers) -> argparse.ArgumentParser:
+def add_mcp_subparser(subparsers: Any) -> argparse.ArgumentParser:
     """Add MCP command subparser to the main parser.
 
     Args:
@@ -59,7 +60,7 @@ def add_mcp_subparser(subparsers) -> argparse.ArgumentParser:
         help="DuckDB database file path (default: chunkhound.db)",
     )
 
-    return mcp_parser
+    return cast(argparse.ArgumentParser, mcp_parser)
 
 
-__all__ = ["mcp_command", "add_mcp_subparser"]
+__all__: list[str] = ["mcp_command", "add_mcp_subparser"]

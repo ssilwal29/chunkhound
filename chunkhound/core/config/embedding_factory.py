@@ -6,18 +6,19 @@ with consistent configuration across all ChunkHound execution modes.
 The factory supports all four embedding providers with unified configuration.
 """
 
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
 from loguru import logger
 
 from .embedding_config import EmbeddingConfig
 
 if TYPE_CHECKING:
     from chunkhound.embeddings import (
-        EmbeddingProvider,
-        OpenAIEmbeddingProvider,
-        OpenAICompatibleProvider,
-        TEIProvider,
         BGEInICLProvider,
+        EmbeddingProvider,
+        OpenAICompatibleProvider,
+        OpenAIEmbeddingProvider,
+        TEIProvider,
     )
 
 
@@ -69,7 +70,7 @@ class EmbeddingProviderFactory:
             raise ValueError(f"Unsupported provider: {config.provider}")
 
     @staticmethod
-    def _create_openai_provider(config: Dict[str, Any]) -> "OpenAIEmbeddingProvider":
+    def _create_openai_provider(config: dict[str, Any]) -> "OpenAIEmbeddingProvider":
         """Create OpenAI embedding provider."""
         try:
             from chunkhound.embeddings import create_openai_provider
@@ -102,7 +103,7 @@ class EmbeddingProviderFactory:
             raise ValueError(f"Failed to create OpenAI provider: {e}") from e
 
     @staticmethod
-    def _create_openai_compatible_provider(config: Dict[str, Any]) -> "OpenAICompatibleProvider":
+    def _create_openai_compatible_provider(config: dict[str, Any]) -> "OpenAICompatibleProvider":
         """Create OpenAI-compatible embedding provider."""
         try:
             from chunkhound.embeddings import create_openai_compatible_provider
@@ -144,7 +145,7 @@ class EmbeddingProviderFactory:
             raise ValueError(f"Failed to create OpenAI-compatible provider: {e}") from e
 
     @staticmethod
-    def _create_tei_provider(config: Dict[str, Any]) -> "TEIProvider":
+    def _create_tei_provider(config: dict[str, Any]) -> "TEIProvider":
         """Create TEI (Text Embeddings Inference) provider."""
         try:
             from chunkhound.embeddings import create_tei_provider
@@ -174,7 +175,7 @@ class EmbeddingProviderFactory:
             raise ValueError(f"Failed to create TEI provider: {e}") from e
 
     @staticmethod
-    def _create_bge_in_icl_provider(config: Dict[str, Any]) -> "BGEInICLProvider":
+    def _create_bge_in_icl_provider(config: dict[str, Any]) -> "BGEInICLProvider":
         """Create BGE-IN-ICL embedding provider."""
         try:
             from chunkhound.embeddings import create_bge_in_icl_provider
@@ -230,7 +231,7 @@ class EmbeddingProviderFactory:
         return ['openai', 'openai-compatible', 'tei', 'bge-in-icl']
 
     @staticmethod
-    def validate_provider_dependencies(provider: str) -> tuple[bool, Optional[str]]:
+    def validate_provider_dependencies(provider: str) -> tuple[bool, str | None]:
         """
         Validate that dependencies for a provider are available.
 
@@ -262,9 +263,9 @@ class EmbeddingProviderFactory:
     @staticmethod
     def create_provider_from_legacy_args(
         provider: str,
-        model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         **kwargs
     ) -> "EmbeddingProvider":
         """
@@ -311,7 +312,7 @@ class EmbeddingProviderFactory:
         return EmbeddingProviderFactory.create_provider(config)
 
     @staticmethod
-    def get_provider_info(provider: str) -> Dict[str, Any]:
+    def get_provider_info(provider: str) -> dict[str, Any]:
         """
         Get information about a specific provider.
 

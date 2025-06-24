@@ -4,9 +4,8 @@ ChunkHound MCP Entry Point - Dedicated script for Model Context Protocol server
 Suppresses all logging before any chunkhound module imports to ensure clean JSON-RPC
 """
 
-import os
-import sys
 import logging
+import os
 
 # CRITICAL: Suppress ALL logging BEFORE any other imports
 # This must happen before importing loguru or any chunkhound modules
@@ -29,7 +28,7 @@ try:
 except ImportError:
     pass
 
-async def main():
+async def main() -> None:
     """Main entry point for MCP server with proper logging suppression."""
     # Database path should be set via environment variable
     db_path = os.environ.get("CHUNKHOUND_DB_PATH")
@@ -56,7 +55,7 @@ async def main():
     await run_mcp_server()
 
 
-def main_sync():
+def main_sync() -> None:
     """Synchronous entry point for CLI integration."""
     import asyncio
     asyncio.run(main())

@@ -1,8 +1,8 @@
 """Provider registry and dependency injection container for ChunkHound."""
 
 import os
-from typing import Any, Dict, Optional, Type, TypeVar
-import inspect
+from typing import Any, TypeVar
+
 from loguru import logger
 
 # Import core types with PyInstaller fallback
@@ -16,57 +16,61 @@ except ImportError:
 try:
     from providers.database.duckdb_provider import DuckDBProvider
     from providers.embeddings.openai_provider import OpenAIEmbeddingProvider
+    from providers.parsing.bash_parser import BashParser
+    from providers.parsing.c_parser import CParser
+    from providers.parsing.cpp_parser import CppParser
+    from providers.parsing.csharp_parser import CSharpParser
+    from providers.parsing.go_parser import GoParser
+    from providers.parsing.groovy_parser import GroovyParser
+    from providers.parsing.java_parser import JavaParser
+    from providers.parsing.javascript_parser import JavaScriptParser
+    from providers.parsing.kotlin_parser import KotlinParser
+    from providers.parsing.markdown_parser import MarkdownParser
+    from providers.parsing.matlab_parser import MatlabParser
 
     # Import language parsers
     from providers.parsing.python_parser import PythonParser
-    from providers.parsing.java_parser import JavaParser
-    from providers.parsing.javascript_parser import JavaScriptParser
-    from providers.parsing.typescript_parser import TypeScriptParser
-    from providers.parsing.csharp_parser import CSharpParser
-    from providers.parsing.groovy_parser import GroovyParser
-    from providers.parsing.kotlin_parser import KotlinParser
-    from providers.parsing.go_parser import GoParser
-    from providers.parsing.bash_parser import BashParser
-    from providers.parsing.markdown_parser import MarkdownParser
-    from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
-    from providers.parsing.toml_parser import TomlParser
-    from providers.parsing.c_parser import CParser
-    from providers.parsing.cpp_parser import CppParser
-    from providers.parsing.matlab_parser import MatlabParser
     from providers.parsing.rust_parser import RustParser
+    from providers.parsing.text_parser import JsonParser, PlainTextParser, YamlParser
+    from providers.parsing.toml_parser import TomlParser
+    from providers.parsing.typescript_parser import TypeScriptParser
 
     # Import services
     from services.base_service import BaseService
+    from services.embedding_service import EmbeddingService
     from services.indexing_coordinator import IndexingCoordinator
     from services.search_service import SearchService
-    from services.embedding_service import EmbeddingService
 except ImportError:
     # PyInstaller-compatible imports
     from chunkhound.providers.database.duckdb_provider import DuckDBProvider
     from chunkhound.providers.embeddings.openai_provider import OpenAIEmbeddingProvider
+    from chunkhound.providers.parsing.bash_parser import BashParser
+    from chunkhound.providers.parsing.c_parser import CParser
+    from chunkhound.providers.parsing.cpp_parser import CppParser
+    from chunkhound.providers.parsing.csharp_parser import CSharpParser
+    from chunkhound.providers.parsing.go_parser import GoParser
+    from chunkhound.providers.parsing.groovy_parser import GroovyParser
+    from chunkhound.providers.parsing.java_parser import JavaParser
+    from chunkhound.providers.parsing.javascript_parser import JavaScriptParser
+    from chunkhound.providers.parsing.markdown_parser import MarkdownParser
+    from chunkhound.providers.parsing.matlab_parser import MatlabParser
 
     # Import language parsers
     from chunkhound.providers.parsing.python_parser import PythonParser
-    from chunkhound.providers.parsing.java_parser import JavaParser
-    from chunkhound.providers.parsing.javascript_parser import JavaScriptParser
-    from chunkhound.providers.parsing.typescript_parser import TypeScriptParser
-    from chunkhound.providers.parsing.csharp_parser import CSharpParser
-    from chunkhound.providers.parsing.groovy_parser import GroovyParser
-    from chunkhound.providers.parsing.go_parser import GoParser
-    from chunkhound.providers.parsing.bash_parser import BashParser
-    from chunkhound.providers.parsing.markdown_parser import MarkdownParser
-    from chunkhound.providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
-    from chunkhound.providers.parsing.toml_parser import TomlParser
-    from chunkhound.providers.parsing.c_parser import CParser
-    from chunkhound.providers.parsing.cpp_parser import CppParser
-    from chunkhound.providers.parsing.matlab_parser import MatlabParser
     from chunkhound.providers.parsing.rust_parser import RustParser
+    from chunkhound.providers.parsing.text_parser import (
+        JsonParser,
+        PlainTextParser,
+        YamlParser,
+    )
+    from chunkhound.providers.parsing.toml_parser import TomlParser
+    from chunkhound.providers.parsing.typescript_parser import TypeScriptParser
 
     # Import services
     from chunkhound.services.base_service import BaseService
+    from chunkhound.services.embedding_service import EmbeddingService
     from chunkhound.services.indexing_coordinator import IndexingCoordinator
     from chunkhound.services.search_service import SearchService
-    from chunkhound.services.embedding_service import EmbeddingService
 
 T = TypeVar('T')
 
@@ -76,15 +80,15 @@ class ProviderRegistry:
 
     def __init__(self):
         """Initialize the provider registry."""
-        self._providers: Dict[str, Any] = {}
-        self._singletons: Dict[str, Any] = {}
-        self._language_parsers: Dict[Language, Any] = {}
-        self._config: Dict[str, Any] = {}
+        self._providers: dict[str, Any] = {}
+        self._singletons: dict[str, Any] = {}
+        self._language_parsers: dict[Language, Any] = {}
+        self._config: dict[str, Any] = {}
 
         # Register default providers
         self._register_default_providers()
 
-    def configure(self, config: Dict[str, Any]) -> None:
+    def configure(self, config: dict[str, Any]) -> None:
         """Configure the registry with application settings.
 
         Args:
@@ -157,7 +161,7 @@ class ProviderRegistry:
         else:
             return self._create_instance(implementation_class)
 
-    def get_language_parser(self, language: Language) -> Optional[Any]:
+    def get_language_parser(self, language: Language) -> Any | None:
         """Get parser for specified programming language.
 
         Args:
@@ -168,7 +172,7 @@ class ProviderRegistry:
         """
         return self._language_parsers.get(language)
 
-    def get_all_language_parsers(self) -> Dict[Language, Any]:
+    def get_all_language_parsers(self) -> dict[Language, Any]:
         """Get all registered language parsers.
 
         Returns:
@@ -176,7 +180,7 @@ class ProviderRegistry:
         """
         return self._language_parsers.copy()
 
-    def create_service(self, service_class: Type[T]) -> T:
+    def create_service(self, service_class: type[T]) -> T:
         """Create a service instance with dependency injection.
 
         Args:
@@ -247,13 +251,13 @@ class ProviderRegistry:
 
         # Get unified batch configuration from config with environment variable override
         # Optimized defaults based on DuckDB performance research and HNSW vector index best practices
-        embedding_batch_size = int(os.getenv('CHUNKHOUND_EMBEDDING_BATCH_SIZE', 
+        embedding_batch_size = int(os.getenv('CHUNKHOUND_EMBEDDING_BATCH_SIZE',
                                              self._config.get('embedding', {}).get('batch_size', 1000)))
         db_batch_size = int(os.getenv('CHUNKHOUND_DB_BATCH_SIZE',
                                       self._config.get('database', {}).get('batch_size', 5000)))
         max_concurrent = int(os.getenv('CHUNKHOUND_MAX_CONCURRENT_EMBEDDINGS',
                                        self._config.get('embedding', {}).get('max_concurrent_batches', 8)))
-        
+
         logger.info(f"EmbeddingService configuration: embedding_batch_size={embedding_batch_size}, "
                    f"db_batch_size={db_batch_size}, max_concurrent={max_concurrent}")
 
@@ -517,7 +521,7 @@ def get_registry() -> ProviderRegistry:
     return _registry
 
 
-def configure_registry(config: Dict[str, Any]) -> None:
+def configure_registry(config: dict[str, Any]) -> None:
     """Configure the global provider registry.
 
     Args:

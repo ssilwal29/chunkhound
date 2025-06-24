@@ -4,22 +4,29 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 
 from loguru import logger
-from tqdm import tqdm
 
 from chunkhound import __version__
+from chunkhound.embeddings import (
+    EmbeddingManager,
+    create_openai_compatible_provider,
+    create_openai_provider,
+    create_tei_provider,
+)
 from chunkhound.signal_coordinator import CLICoordinator
-from chunkhound.file_watcher import FileWatcherManager
-from chunkhound.embeddings import EmbeddingManager, create_openai_provider, create_openai_compatible_provider, create_tei_provider
-from registry import create_indexing_coordinator, configure_registry
+from registry import configure_registry, create_indexing_coordinator
+
+from ..parsers.run_parser import process_batch_arguments
 from ..utils.output import OutputFormatter, format_stats
 from ..utils.validation import (
-    validate_path, validate_provider_args, validate_file_patterns,
-    validate_numeric_args, ensure_database_directory
+    ensure_database_directory,
+    validate_file_patterns,
+    validate_numeric_args,
+    validate_path,
+    validate_provider_args,
 )
-from ..parsers.run_parser import process_batch_arguments
 
 
 async def run_command(args: argparse.Namespace) -> None:
@@ -146,7 +153,7 @@ async def _handle_mcp_coordination(cli_coordinator: CLICoordinator, formatter: O
             sys.exit(1)
 
 
-def _build_registry_config(args: argparse.Namespace) -> Dict[str, Any]:
+def _build_registry_config(args: argparse.Namespace) -> dict[str, Any]:
     """Build configuration for the provider registry.
 
     Args:
@@ -178,7 +185,7 @@ def _build_registry_config(args: argparse.Namespace) -> Dict[str, Any]:
     return config
 
 
-def _setup_file_patterns(args: argparse.Namespace) -> Tuple[List[str], List[str]]:
+def _setup_file_patterns(args: argparse.Namespace) -> tuple[list[str], list[str]]:
     """Set up file inclusion and exclusion patterns.
 
     Args:
@@ -224,7 +231,7 @@ def _setup_file_patterns(args: argparse.Namespace) -> Tuple[List[str], List[str]
     return include_patterns, exclude_patterns
 
 
-async def _setup_embedding_manager(args: argparse.Namespace, formatter: OutputFormatter) -> Optional[EmbeddingManager]:
+async def _setup_embedding_manager(args: argparse.Namespace, formatter: OutputFormatter) -> EmbeddingManager | None:
     """Set up embedding manager based on provider configuration.
 
     Args:
@@ -290,8 +297,8 @@ async def _process_directory(
     indexing_coordinator,
     args: argparse.Namespace,
     formatter: OutputFormatter,
-    include_patterns: List[str],
-    exclude_patterns: List[str]
+    include_patterns: list[str],
+    exclude_patterns: list[str]
 ) -> None:
     """Process directory for indexing.
 
@@ -371,15 +378,15 @@ async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, form
 
     try:
         # Import file watcher components
-        from chunkhound.file_watcher import FileWatcherManager, WATCHDOG_AVAILABLE
-        
+        from chunkhound.file_watcher import WATCHDOG_AVAILABLE, FileWatcherManager
+
         if not WATCHDOG_AVAILABLE:
             formatter.error("❌ File watching requires the 'watchdog' package. Install with: pip install watchdog")
             return
-            
+
         # Initialize file watcher
         file_watcher_manager = FileWatcherManager()
-        
+
         # Create callback for file changes
         async def process_cli_file_change(file_path: Path, event_type: str):
             """Process file changes in CLI mode."""
@@ -398,20 +405,20 @@ async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, form
                             formatter.warning(f"⚠️  Failed to process {event_type} file: {file_path} - {result.get('error', 'unknown error')}")
             except Exception as e:
                 formatter.error(f"❌ Error processing {event_type} for {file_path}: {e}")
-        
+
         # Initialize file watcher with callback
         watch_paths = [args.path] if args.path.is_dir() else [args.path.parent]
         watcher_success = await file_watcher_manager.initialize(
             process_cli_file_change,
             watch_paths=watch_paths
         )
-        
+
         if not watcher_success:
             formatter.error("❌ Failed to initialize file watcher")
             return
-            
+
         formatter.success("✅ File watching started. Press Ctrl+C to stop.")
-        
+
         # Keep watching until interrupted
         try:
             while True:
@@ -420,7 +427,7 @@ async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, form
             formatter.info("🛑 File watching stopped by user")
         finally:
             await file_watcher_manager.cleanup()
-            
+
     except ImportError as e:
         formatter.error(f"❌ Failed to import file watching components: {e}")
     except Exception as e:

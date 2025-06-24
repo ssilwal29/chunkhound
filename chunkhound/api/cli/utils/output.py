@@ -3,9 +3,8 @@
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional
-from pathlib import Path
 from datetime import datetime
+from typing import Any
 
 
 class OutputFormatter:
@@ -62,7 +61,7 @@ class OutputFormatter:
         if self.verbose:
             print(f"🔍 {message}")
 
-    def json_output(self, data: Dict[str, Any]) -> None:
+    def json_output(self, data: dict[str, Any]) -> None:
         """Print data as formatted JSON.
 
         Args:
@@ -70,7 +69,7 @@ class OutputFormatter:
         """
         print(json.dumps(data, indent=2, default=str))
 
-    def table_header(self, headers: List[str], widths: Optional[List[int]] = None) -> None:
+    def table_header(self, headers: list[str], widths: list[int] | None = None) -> None:
         """Print a table header.
 
         Args:
@@ -85,7 +84,7 @@ class OutputFormatter:
         print(row)
         print("-" * len(row))
 
-    def table_row(self, values: List[str], widths: Optional[List[int]] = None) -> None:
+    def table_row(self, values: list[str], widths: list[int] | None = None) -> None:
         """Print a table row.
 
         Args:
@@ -100,7 +99,7 @@ class OutputFormatter:
         print(row)
 
 
-def format_stats(stats: Dict[str, Any]) -> str:
+def format_stats(stats: dict[str, Any]) -> str:
     """Format database statistics for display.
 
     Args:
@@ -116,7 +115,7 @@ def format_stats(stats: Dict[str, Any]) -> str:
     return f"{files} files, {chunks} chunks, {embeddings} embeddings"
 
 
-def format_health_status(status: Dict[str, Any]) -> str:
+def format_health_status(status: dict[str, Any]) -> str:
     """Format health status for display.
 
     Args:
@@ -133,7 +132,7 @@ def format_health_status(status: Dict[str, Any]) -> str:
         return f"🔴 Unhealthy: {error}"
 
 
-def format_file_size(size_bytes: int) -> str:
+def format_file_size(size_bytes: float) -> str:
     """Format file size in human-readable format.
 
     Args:
@@ -170,7 +169,7 @@ def format_duration(seconds: float) -> str:
         return f"{hours:.1f}h"
 
 
-def format_timestamp(timestamp: Optional[datetime] = None) -> str:
+def format_timestamp(timestamp: datetime | None = None) -> str:
     """Format timestamp for display.
 
     Args:
@@ -201,7 +200,7 @@ def format_progress(current: int, total: int, prefix: str = "") -> str:
     return f"{prefix_text}({current}/{total}, {percentage:.1f}%)"
 
 
-def format_server_info(server_config: Dict[str, Any]) -> List[str]:
+def format_server_info(server_config: dict[str, Any]) -> list[str]:
     """Format server configuration for table display.
 
     Args:
@@ -224,7 +223,7 @@ def format_server_info(server_config: Dict[str, Any]) -> List[str]:
     return [name, server_type, base_url, model, enabled, is_default]
 
 
-def print_banner(title: str, subtitle: Optional[str] = None) -> None:
+def print_banner(title: str, subtitle: str | None = None) -> None:
     """Print a banner with title and optional subtitle.
 
     Args:

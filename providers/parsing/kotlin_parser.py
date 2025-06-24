@@ -241,7 +241,7 @@ class KotlinParser(TreeSitterParserBase):
 
             query = self._language.query("""
                 (class_declaration
-                    (modifiers 
+                    (modifiers
                         (class_modifier "data")
                     )
                     name: (type_identifier) @data_class_name
@@ -347,7 +347,7 @@ class KotlinParser(TreeSitterParserBase):
                     continue
 
                 companion_node = captures["companion_def"][0]
-                
+
                 # Companion objects may or may not have explicit names
                 companion_name = "Companion"
                 if "companion_name" in captures:
@@ -356,7 +356,7 @@ class KotlinParser(TreeSitterParserBase):
 
                 # Find containing class
                 parent_class = self._find_containing_class(companion_node, source)
-                
+
                 qualified_name = companion_name
                 if parent_class and package_name:
                     qualified_name = f"{package_name}.{parent_class}.{companion_name}"

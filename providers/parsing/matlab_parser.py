@@ -1,18 +1,20 @@
 """Matlab language parser provider implementation for ChunkHound - concrete parser using tree-sitter."""
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
-import time
+from typing import Any
 
 from loguru import logger
 
-from core.types import ChunkType, Language as CoreLanguage
-from interfaces.language_parser import ParseConfig, ParseResult
+from core.types import ChunkType
+from core.types import Language as CoreLanguage
+from interfaces.language_parser import ParseConfig
 from providers.parsing.base_parser import TreeSitterParserBase
 
 try:
+    from tree_sitter import Language as TSLanguage
+    from tree_sitter import Node as TSNode
+    from tree_sitter import Parser as TSParser
     from tree_sitter_language_pack import get_language, get_parser
-    from tree_sitter import Language as TSLanguage, Parser as TSParser, Node as TSNode
     TREE_SITTER_AVAILABLE = True
 except ImportError:
     TREE_SITTER_AVAILABLE = False
@@ -26,7 +28,7 @@ except ImportError:
 class MatlabParser(TreeSitterParserBase):
     """Matlab language parser using tree-sitter."""
 
-    def __init__(self, config: Optional[ParseConfig] = None):
+    def __init__(self, config: ParseConfig | None = None):
         """Initialize Matlab parser.
 
         Args:
@@ -59,7 +61,7 @@ class MatlabParser(TreeSitterParserBase):
         return "matlab"
 
 
-    def _extract_chunks(self, tree_node: TSNode, source: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _extract_chunks(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
         """Extract semantic chunks from Matlab AST.
 
         Args:
@@ -96,7 +98,7 @@ class MatlabParser(TreeSitterParserBase):
 
         return chunks
 
-    def _extract_functions(self, tree_node: TSNode, source: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _extract_functions(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
         """Extract Matlab function definitions from AST."""
         chunks = []
 
@@ -129,7 +131,7 @@ class MatlabParser(TreeSitterParserBase):
 
                 # Extract parameters and return values
                 parameters, return_values = self._extract_function_signature(function_node, source)
-                
+
                 # Create display name with Matlab-style signature
                 if return_values:
                     if len(return_values) == 1:
@@ -153,7 +155,7 @@ class MatlabParser(TreeSitterParserBase):
 
         return chunks
 
-    def _extract_classes(self, tree_node: TSNode, source: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _extract_classes(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
         """Extract Matlab class definitions from AST."""
         chunks = []
 
@@ -209,7 +211,7 @@ class MatlabParser(TreeSitterParserBase):
         return chunks
 
     def _extract_class_methods(self, class_node: TSNode, source: str,
-                              file_path: Path, class_name: str) -> List[Dict[str, Any]]:
+                              file_path: Path, class_name: str) -> list[dict[str, Any]]:
         """Extract methods from a Matlab class."""
         chunks = []
 
@@ -244,7 +246,7 @@ class MatlabParser(TreeSitterParserBase):
                 parameters, return_values = self._extract_function_signature(method_node, source)
 
                 qualified_name = f"{class_name}.{method_name}"
-                
+
                 # Create display name with Matlab-style signature
                 if return_values:
                     if len(return_values) == 1:
@@ -269,18 +271,18 @@ class MatlabParser(TreeSitterParserBase):
 
         return chunks
 
-    def _extract_script_blocks(self, tree_node: TSNode, source: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _extract_script_blocks(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
         """Extract script-level code blocks from Matlab files."""
         chunks = []
 
         try:
             # Check if this is a script file (no function definitions at top level)
             has_functions = self._has_top_level_functions(tree_node)
-            
+
             if not has_functions:
                 # This is a script file - create a script chunk
                 script_name = f"script:{file_path.stem}"
-                
+
                 chunk = self._create_chunk(
                     tree_node, source, file_path, ChunkType.SCRIPT, script_name,
                     display_name=file_path.name
@@ -292,7 +294,7 @@ class MatlabParser(TreeSitterParserBase):
 
         return chunks
 
-    def _extract_function_signature(self, function_node: TSNode, source: str) -> tuple[List[str], List[str]]:
+    def _extract_function_signature(self, function_node: TSNode, source: str) -> tuple[list[str], list[str]]:
         """Extract parameter names and return values from a Matlab function."""
         parameters = []
         return_values = []
@@ -315,7 +317,7 @@ class MatlabParser(TreeSitterParserBase):
 
         return parameters, return_values
 
-    def _extract_class_inheritance(self, class_node: TSNode, source: str) -> List[str]:
+    def _extract_class_inheritance(self, class_node: TSNode, source: str) -> list[str]:
         """Extract inheritance information from a Matlab class."""
         inheritance = []
 
@@ -339,10 +341,10 @@ class MatlabParser(TreeSitterParserBase):
 
         return inheritance
 
-    def _extract_identifiers_from_node(self, node: TSNode, source: str) -> List[str]:
+    def _extract_identifiers_from_node(self, node: TSNode, source: str) -> list[str]:
         """Extract all identifier names from a node."""
         identifiers = []
-        
+
         try:
             if node.type == "identifier":
                 name = self._get_node_text(node, source).strip()
@@ -369,7 +371,7 @@ class MatlabParser(TreeSitterParserBase):
             """)
 
             matches = query.matches(tree_node)
-            
+
             # Check if any function is at the top level (not nested)
             for match in matches:
                 pattern_index, captures = match
@@ -384,7 +386,7 @@ class MatlabParser(TreeSitterParserBase):
 
         return False
 
-    def _create_fallback_block_chunk(self, source: str, file_path: Path) -> Dict[str, Any]:
+    def _create_fallback_block_chunk(self, source: str, file_path: Path) -> dict[str, Any]:
         """Create a fallback BLOCK chunk for files with no structured content."""
         lines = source.splitlines()
         line_count = len(lines)

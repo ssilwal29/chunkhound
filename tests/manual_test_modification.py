@@ -17,12 +17,10 @@ issues in ChunkHound's realtime watching system.
 """
 
 import os
-import sys
+import subprocess
 import time
 import uuid
-import subprocess
 from pathlib import Path
-
 
 # Test configuration
 TEST_DIR = Path("/tmp/chunkhound_manual_test")
@@ -37,23 +35,23 @@ def run_command(cmd):
     result = subprocess.run(
         cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
-    
+
     if result.stdout:
         print(f"STDOUT:\n{result.stdout}")
     if result.stderr:
         print(f"STDERR:\n{result.stderr}")
-    
+
     return result.returncode == 0
 
 
 def setup():
     """Set up test environment."""
     print("\n=== Setting up test environment ===")
-    
+
     # Create test directory
     TEST_DIR.mkdir(exist_ok=True, parents=True)
     print(f"Created test directory: {TEST_DIR}")
-    
+
     # Create initial test file
     initial_content = f"""# Test file for ChunkHound file modification detection
 # MARKER: {UNIQUE_ID}_INITIAL
@@ -64,7 +62,7 @@ def initial_function():
 
 class InitialClass:
     \"\"\"This class should be detected in the initial indexing.\"\"\"
-    
+
     def method1(self):
         return "{UNIQUE_ID}_INITIAL_METHOD1"
 """
@@ -89,7 +87,7 @@ def search_content(marker, wait_time=0):
     if wait_time > 0:
         print(f"Waiting {wait_time} seconds before searching...")
         time.sleep(wait_time)
-    
+
     print(f"\n=== Searching for marker: {marker} ===")
     cmd = f"{CHUNKHOUND_CMD} search-regex \"{marker}\""
     success = run_command(cmd)
@@ -99,10 +97,10 @@ def search_content(marker, wait_time=0):
 def modify_file():
     """Modify the test file with new content."""
     print("\n=== Modifying test file ===")
-    
+
     # Read current content to preserve it
     current_content = TEST_FILE.read_text() if TEST_FILE.exists() else ""
-    
+
     # Append new content
     modified_content = current_content + f"""
 # MARKER: {UNIQUE_ID}_MODIFIED
@@ -114,16 +112,16 @@ def modified_function():
 
 class ModifiedClass:
     \"\"\"This class should be detected after file modification.\"\"\"
-    
+
     def new_method(self):
         return "{UNIQUE_ID}_MODIFIED_METHOD"
 """
-    
+
     # Write modified content
     TEST_FILE.write_text(modified_content)
     print(f"Modified test file: {TEST_FILE}")
     print(f"Added marker: {UNIQUE_ID}_MODIFIED")
-    
+
     # Touch the file to ensure mtime changes
     os.utime(TEST_FILE, None)
     print(f"Updated file modification time: {TEST_FILE.stat().st_mtime}")
@@ -132,7 +130,7 @@ class ModifiedClass:
 def replace_file():
     """Replace the test file with completely new content."""
     print("\n=== Replacing test file content ===")
-    
+
     # Create completely new content
     new_content = f"""# Test file for ChunkHound file modification detection
 # MARKER: {UNIQUE_ID}_REPLACED
@@ -144,16 +142,16 @@ def replaced_function():
 
 class ReplacedClass:
     \"\"\"This class should be detected after file replacement.\"\"\"
-    
+
     def replaced_method(self):
         return "{UNIQUE_ID}_REPLACED_METHOD"
 """
-    
+
     # Write new content
     TEST_FILE.write_text(new_content)
     print(f"Replaced test file content: {TEST_FILE}")
     print(f"New marker: {UNIQUE_ID}_REPLACED")
-    
+
     # Touch the file to ensure mtime changes
     os.utime(TEST_FILE, None)
     print(f"Updated file modification time: {TEST_FILE.stat().st_mtime}")
@@ -171,7 +169,7 @@ def check_modified_time():
     if not TEST_FILE.exists():
         print(f"Test file does not exist: {TEST_FILE}")
         return
-    
+
     stats = TEST_FILE.stat()
     print(f"\nFile: {TEST_FILE}")
     print(f"Size: {stats.st_size} bytes")
@@ -218,9 +216,9 @@ def interactive_menu():
         print("10. Check MCP server status")
         print("11. View test file content")
         print("12. Exit")
-        
+
         choice = input("\nEnter your choice (1-12): ")
-        
+
         if choice == '1':
             setup()
         elif choice == '2':
@@ -256,7 +254,7 @@ def cleanup():
         if TEST_FILE.exists():
             TEST_FILE.unlink()
             print(f"Removed test file: {TEST_FILE}")
-        
+
         if TEST_DIR.exists():
             TEST_DIR.rmdir()
             print(f"Removed test directory: {TEST_DIR}")
@@ -270,9 +268,9 @@ def main():
         print("ChunkHound File Modification Detection Debug Tool")
         print("================================================")
         print(f"Unique test ID: {UNIQUE_ID}")
-        
+
         interactive_menu()
-        
+
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
     except Exception as e:

@@ -11,7 +11,7 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any
 
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
@@ -27,8 +27,8 @@ class BaseFileConfigSettingsSource(PydanticBaseSettingsSource, ABC):
 
     def __init__(
         self,
-        settings_cls: Type[BaseSettings],
-        config_file: Union[str, Path, List[Union[str, Path]]]
+        settings_cls: type[BaseSettings],
+        config_file: str | Path | list[str | Path]
     ):
         """
         Initialize file-based configuration source.
@@ -47,7 +47,7 @@ class BaseFileConfigSettingsSource(PydanticBaseSettingsSource, ABC):
 
         self._data = self._load_files()
 
-    def _load_files(self) -> Dict[str, Any]:
+    def _load_files(self) -> dict[str, Any]:
         """Load and merge data from all configuration files."""
         merged_data = {}
 
@@ -73,7 +73,7 @@ class BaseFileConfigSettingsSource(PydanticBaseSettingsSource, ABC):
         return merged_data
 
     @abstractmethod
-    def load_file(self, path: Path) -> Dict[str, Any]:
+    def load_file(self, path: Path) -> dict[str, Any]:
         """
         Load configuration data from a specific file.
 
@@ -87,7 +87,7 @@ class BaseFileConfigSettingsSource(PydanticBaseSettingsSource, ABC):
 
     def get_field_value(
         self, field: FieldInfo, field_name: str
-    ) -> Tuple[Any, str, bool]:
+    ) -> tuple[Any, str, bool]:
         """Get field value from configuration data."""
         if field_name in self._data:
             return self._data[field_name], field_name, True
@@ -105,7 +105,7 @@ class BaseFileConfigSettingsSource(PydanticBaseSettingsSource, ABC):
 
         return None, field_name, False
 
-    def __call__(self) -> Dict[str, Any]:
+    def __call__(self) -> dict[str, Any]:
         """Return the loaded configuration data."""
         return self._data
 
@@ -116,7 +116,7 @@ class BaseFileConfigSettingsSource(PydanticBaseSettingsSource, ABC):
 class YamlConfigSettingsSource(BaseFileConfigSettingsSource):
     """Configuration source for YAML files."""
 
-    def load_file(self, path: Path) -> Dict[str, Any]:
+    def load_file(self, path: Path) -> dict[str, Any]:
         """Load YAML configuration file."""
         try:
             import yaml
@@ -126,7 +126,7 @@ class YamlConfigSettingsSource(BaseFileConfigSettingsSource):
                 "Install with: pip install pyyaml"
             )
 
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             data = yaml.safe_load(f)
             return data if isinstance(data, dict) else {}
 
@@ -134,7 +134,7 @@ class YamlConfigSettingsSource(BaseFileConfigSettingsSource):
 class TomlConfigSettingsSource(BaseFileConfigSettingsSource):
     """Configuration source for TOML files."""
 
-    def load_file(self, path: Path) -> Dict[str, Any]:
+    def load_file(self, path: Path) -> dict[str, Any]:
         """Load TOML configuration file."""
         try:
             import tomllib
@@ -154,9 +154,9 @@ class TomlConfigSettingsSource(BaseFileConfigSettingsSource):
 class JsonConfigSettingsSource(BaseFileConfigSettingsSource):
     """Configuration source for JSON files."""
 
-    def load_file(self, path: Path) -> Dict[str, Any]:
+    def load_file(self, path: Path) -> dict[str, Any]:
         """Load JSON configuration file."""
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return json.load(f)
 
 
@@ -170,11 +170,11 @@ class FilteredCliSettingsSource(PydanticBaseSettingsSource):
 
     def __init__(
         self,
-        settings_cls: Type[BaseSettings],
-        cli_args: Optional[List[str]] = None,
+        settings_cls: type[BaseSettings],
+        cli_args: list[str] | None = None,
         cli_prefix: str = "",
-        cli_includes: Optional[List[str]] = None,
-        cli_excludes: Optional[List[str]] = None,
+        cli_includes: list[str] | None = None,
+        cli_excludes: list[str] | None = None,
         cli_nested_delimiter: str = "__",
     ):
         """
@@ -198,7 +198,7 @@ class FilteredCliSettingsSource(PydanticBaseSettingsSource):
 
         self._parsed_args = self._parse_cli_args()
 
-    def _parse_cli_args(self) -> Dict[str, Any]:
+    def _parse_cli_args(self) -> dict[str, Any]:
         """Parse CLI arguments into a dictionary."""
         parsed = {}
         i = 0
@@ -284,7 +284,7 @@ class FilteredCliSettingsSource(PydanticBaseSettingsSource):
         # Return as string
         return value
 
-    def _convert_nested_keys(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _convert_nested_keys(self, data: dict[str, Any]) -> dict[str, Any]:
         """Convert nested keys (key__subkey) to nested dictionaries."""
         result = {}
 
@@ -307,7 +307,7 @@ class FilteredCliSettingsSource(PydanticBaseSettingsSource):
 
     def get_field_value(
         self, field: FieldInfo, field_name: str
-    ) -> Tuple[Any, str, bool]:
+    ) -> tuple[Any, str, bool]:
         """Get field value from parsed CLI arguments."""
         if field_name in self._parsed_args:
             return self._parsed_args[field_name], field_name, True
@@ -325,7 +325,7 @@ class FilteredCliSettingsSource(PydanticBaseSettingsSource):
 
         return None, field_name, False
 
-    def __call__(self) -> Dict[str, Any]:
+    def __call__(self) -> dict[str, Any]:
         """Return the parsed CLI arguments."""
         return self._parsed_args
 
@@ -339,13 +339,13 @@ class FilteredCliSettingsSource(PydanticBaseSettingsSource):
 
 
 def create_config_sources(
-    settings_cls: Type[BaseSettings],
-    config_files: Optional[List[Union[str, Path]]] = None,
-    cli_args: Optional[List[str]] = None,
+    settings_cls: type[BaseSettings],
+    config_files: list[str | Path] | None = None,
+    cli_args: list[str] | None = None,
     cli_prefix: str = "",
-    cli_includes: Optional[List[str]] = None,
-    cli_excludes: Optional[List[str]] = None,
-) -> List[PydanticBaseSettingsSource]:
+    cli_includes: list[str] | None = None,
+    cli_excludes: list[str] | None = None,
+) -> list[PydanticBaseSettingsSource]:
     """
     Create a list of configuration sources with reasonable defaults.
 
@@ -394,9 +394,9 @@ def create_config_sources(
 
 
 def find_config_files(
-    base_dirs: Optional[List[Union[str, Path]]] = None,
-    config_names: Optional[List[str]] = None,
-) -> List[Path]:
+    base_dirs: list[str | Path] | None = None,
+    config_names: list[str] | None = None,
+) -> list[Path]:
     """
     Find configuration files in common locations.
 

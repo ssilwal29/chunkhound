@@ -4,21 +4,21 @@ ChunkHound MCP Server - Model Context Protocol implementation
 Provides code search capabilities via stdin/stdout JSON-RPC protocol
 """
 
+import asyncio
+import json
+import logging
 import os
 import sys
-import json
-import asyncio
-import logging
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Union, Tuple
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
 import mcp.server.stdio
 import mcp.types as types
 from mcp.server import Server
 from mcp.server.lowlevel import NotificationOptions
 from mcp.server.models import InitializationOptions
-
 
 # Disable all logging for MCP server to prevent interference with JSON-RPC
 logging.disable(logging.CRITICAL)
@@ -36,36 +36,36 @@ except ImportError:
     pass
 
 try:
+    from .core.config import EmbeddingConfig, EmbeddingProviderFactory
     from .database import Database
     from .embeddings import EmbeddingManager
-    from .signal_coordinator import SignalCoordinator
     from .file_watcher import FileWatcherManager
-    from .core.config import EmbeddingConfig, EmbeddingProviderFactory
     from .registry import configure_registry, get_registry
+    from .signal_coordinator import SignalCoordinator
     from .task_coordinator import TaskCoordinator, TaskPriority
 except ImportError:
     # Handle running as standalone script or PyInstaller binary
+    from chunkhound.core.config import EmbeddingConfig, EmbeddingProviderFactory
     from chunkhound.database import Database
     from chunkhound.embeddings import EmbeddingManager
-    from chunkhound.signal_coordinator import SignalCoordinator
     from chunkhound.file_watcher import FileWatcherManager
-    from chunkhound.core.config import EmbeddingConfig, EmbeddingProviderFactory
-    from registry import configure_registry, get_registry
+    from chunkhound.signal_coordinator import SignalCoordinator
     from chunkhound.task_coordinator import TaskCoordinator, TaskPriority
+    from registry import configure_registry
 
 # Global database, embedding manager, and file watcher instances
 # Global state management
-_database: Optional[Database] = None
-_embedding_manager: Optional[EmbeddingManager] = None
-_file_watcher: Optional[FileWatcherManager] = None
-_signal_coordinator: Optional[SignalCoordinator] = None
-_task_coordinator: Optional[TaskCoordinator] = None
+_database: Database | None = None
+_embedding_manager: EmbeddingManager | None = None
+_file_watcher: FileWatcherManager | None = None
+_signal_coordinator: SignalCoordinator | None = None
+_task_coordinator: TaskCoordinator | None = None
 
 # Initialize MCP server with explicit stdio
 server = Server("ChunkHound Code Search")
 
 
-def _build_mcp_registry_config(config: EmbeddingConfig, db_path: Path) -> Dict[str, Any]:
+def _build_mcp_registry_config(config: EmbeddingConfig, db_path: Path) -> dict[str, Any]:
     """Build registry configuration for MCP server mode.
 
     Args:
@@ -245,13 +245,13 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
         try:
             if "CHUNKHOUND_DEBUG" in os.environ:
                 print("Server lifespan: Initializing file watcher...", file=sys.stderr)
-            
+
             # Check if watchdog is available before initializing
             try:
                 from .file_watcher import WATCHDOG_AVAILABLE
             except ImportError:
                 from chunkhound.file_watcher import WATCHDOG_AVAILABLE
-            
+
             if not WATCHDOG_AVAILABLE:
                 # FAIL FAST: watchdog is required for real-time file watching
                 error_msg = (
@@ -261,7 +261,7 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 )
                 print(f"❌ MCP SERVER ERROR: {error_msg}", file=sys.stderr)
                 raise ImportError(error_msg)
-            
+
             watcher_success = await _file_watcher.initialize(process_file_change)
             if not watcher_success:
                 # FAIL FAST: file watcher initialization failed
@@ -272,7 +272,7 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 )
                 print(f"❌ MCP SERVER ERROR: {error_msg}", file=sys.stderr)
                 raise RuntimeError(error_msg)
-            
+
             if "CHUNKHOUND_DEBUG" in os.environ:
                 print("Server lifespan: File watcher initialized successfully", file=sys.stderr)
         except Exception as fw_error:
@@ -357,7 +357,7 @@ async def _wait_for_file_completion(file_path: Path, max_retries: int = 3) -> bo
             with open(file_path, 'rb') as f:
                 f.read(1)  # Test read access
             return True
-        except (IOError, PermissionError):
+        except (OSError, PermissionError):
             await asyncio.sleep(0.1)  # Brief wait
     return False
 
@@ -389,7 +389,7 @@ async def process_file_change(file_path: Path, event_type: str):
 
                     # Use incremental processing for 10-100x performance improvement
                     await _database.process_file_incremental(file_path=file_path)
-                    
+
                     # Transaction already committed by IndexingCoordinator with backup/rollback safety
         except Exception as e:
             # Log the exception instead of silently handling it
@@ -403,7 +403,7 @@ async def process_file_change(file_path: Path, event_type: str):
         try:
             # Use nowait to avoid blocking the file watcher
             future = await _task_coordinator.queue_task_nowait(
-                TaskPriority.LOW, 
+                TaskPriority.LOW,
                 _execute_file_processing
             )
             # Don't await the future - let file processing happen in background
@@ -422,35 +422,35 @@ def estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
-def truncate_code(code: str, max_chars: int = 1000) -> Tuple[str, bool]:
+def truncate_code(code: str, max_chars: int = 1000) -> tuple[str, bool]:
     """Truncate code content with smart line breaking."""
     if len(code) <= max_chars:
         return code, False
-    
+
     # Try to break at line boundaries
     lines = code.split('\n')
     truncated_lines = []
     char_count = 0
-    
+
     for line in lines:
         if char_count + len(line) + 1 > max_chars:
             break
         truncated_lines.append(line)
         char_count += len(line) + 1
-    
+
     return '\n'.join(truncated_lines) + '\n...', True
 
 
-def optimize_search_results(results: List[Dict[str, Any]], max_tokens: int = 20000) -> Tuple[List[Dict[str, Any]], bool]:
+def optimize_search_results(results: list[dict[str, Any]], max_tokens: int = 20000) -> tuple[list[dict[str, Any]], bool]:
     """Optimize search results to fit within token limits."""
     if not results:
         return results, False
-    
+
     # First pass: create optimized results with previews
     optimized_results = []
     total_tokens = 0
     truncated = False
-    
+
     for result in results:
         # Create optimized result copy
         opt_result = {
@@ -463,7 +463,7 @@ def optimize_search_results(results: List[Dict[str, Any]], max_tokens: int = 200
             'language': result.get('language'),
             'line_count': result.get('line_count')
         }
-        
+
         # Handle code content with truncation
         original_code = result.get('content', result.get('code', ''))
         if original_code:
@@ -472,11 +472,11 @@ def optimize_search_results(results: List[Dict[str, Any]], max_tokens: int = 200
             if is_code_truncated:
                 opt_result['is_truncated'] = True
                 truncated = True
-        
+
         # Estimate tokens for this result
         result_json = json.dumps(opt_result, ensure_ascii=False)
         result_tokens = estimate_tokens(result_json)
-        
+
         # Check if adding this result would exceed limit
         if total_tokens + result_tokens > max_tokens:
             # If this is the first result and it's too big, include it anyway
@@ -484,14 +484,14 @@ def optimize_search_results(results: List[Dict[str, Any]], max_tokens: int = 200
                 optimized_results.append(opt_result)
                 truncated = True
             break
-        
+
         optimized_results.append(opt_result)
         total_tokens += result_tokens
-    
+
     return optimized_results, truncated
 
 
-def convert_to_ndjson(results: List[Dict[str, Any]]) -> str:
+def convert_to_ndjson(results: list[dict[str, Any]]) -> str:
     """Convert search results to NDJSON format."""
     lines = []
     for result in results:
@@ -502,7 +502,7 @@ def convert_to_ndjson(results: List[Dict[str, Any]]) -> str:
 @server.call_tool()
 async def call_tool(
     name: str, arguments: dict
-) -> List[Union[types.TextContent, types.ImageContent, types.EmbeddedResource]]:
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Handle tool calls"""
     if not _database:
         if _signal_coordinator and _signal_coordinator.is_coordination_active():
@@ -524,7 +524,7 @@ async def call_tool(
 
             results = _database.search_regex(pattern=pattern, limit=limit)
             optimized_results, was_truncated = optimize_search_results(results, max_tokens)
-            
+
             # Add metadata about truncation
             if was_truncated:
                 response_text = f"# TRUNCATED: Results optimized to fit {max_tokens} token limit\n"
@@ -532,7 +532,7 @@ async def call_tool(
                 response_text += convert_to_ndjson(optimized_results)
             else:
                 response_text = convert_to_ndjson(optimized_results)
-            
+
             return [types.TextContent(type="text", text=response_text)]
 
         try:
@@ -581,7 +581,7 @@ async def call_tool(
                 )
 
                 optimized_results, was_truncated = optimize_search_results(results, max_tokens)
-                
+
                 # Add metadata about truncation
                 if was_truncated:
                     response_text = f"# TRUNCATED: Results optimized to fit {max_tokens} token limit\n"
@@ -695,7 +695,7 @@ async def list_tools() -> list[types.Tool]:
     ]
 
 
-def send_error_response(message_id: Any, code: int, message: str, data: Optional[dict] = None):
+def send_error_response(message_id: Any, code: int, message: str, data: dict | None = None):
     """Send a JSON-RPC error response to stdout."""
     error_response = {
         "jsonrpc": "2.0",
@@ -709,7 +709,7 @@ def send_error_response(message_id: Any, code: int, message: str, data: Optional
     print(json.dumps(error_response, ensure_ascii=False), flush=True)
 
 
-def validate_mcp_initialize_message(message_text: str) -> Tuple[bool, Optional[dict], Optional[str]]:
+def validate_mcp_initialize_message(message_text: str) -> tuple[bool, dict | None, str | None]:
     """
     Validate MCP initialize message for common protocol issues.
     Returns (is_valid, parsed_message, error_description)

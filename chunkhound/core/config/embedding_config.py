@@ -7,7 +7,8 @@ config files, CLI arguments) with consistent behavior across MCP server and
 indexing flows.
 """
 
-from typing import Literal, Optional, Dict, Any
+from typing import Any, Literal
+
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -50,17 +51,17 @@ class EmbeddingConfig(BaseSettings):
     )
 
     # Common Configuration
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None,
         description="Embedding model name (uses provider default if not specified)"
     )
 
-    api_key: Optional[SecretStr] = Field(
+    api_key: SecretStr | None = Field(
         default=None,
         description="API key for authentication (provider-specific)"
     )
 
-    base_url: Optional[str] = Field(
+    base_url: str | None = Field(
         default=None,
         description="Base URL for the embedding API"
     )
@@ -95,7 +96,7 @@ class EmbeddingConfig(BaseSettings):
     )
 
     # Provider-Specific Configuration
-    dimensions: Optional[int] = Field(
+    dimensions: int | None = Field(
         default=None,
         ge=1,
         le=8192,
@@ -140,7 +141,7 @@ class EmbeddingConfig(BaseSettings):
     )
 
     @field_validator('model')
-    def validate_model(cls, v: Optional[str], info) -> Optional[str]:
+    def validate_model(cls, v: str | None, info) -> str | None:
         """Validate model name based on provider."""
         if v is None:
             return v
@@ -167,7 +168,7 @@ class EmbeddingConfig(BaseSettings):
         return v
 
     @field_validator('base_url')
-    def validate_base_url(cls, v: Optional[str]) -> Optional[str]:
+    def validate_base_url(cls, v: str | None) -> str | None:
         """Validate and normalize base URL."""
         if v is None:
             return v
@@ -201,7 +202,7 @@ class EmbeddingConfig(BaseSettings):
 
         return v
 
-    def get_provider_config(self) -> Dict[str, Any]:
+    def get_provider_config(self) -> dict[str, Any]:
         """
         Get provider-specific configuration dictionary.
 

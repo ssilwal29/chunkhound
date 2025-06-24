@@ -2,7 +2,7 @@
 
 import argparse
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, cast
 
 from .main_parser import (
     add_common_arguments,
@@ -12,7 +12,7 @@ from .main_parser import (
 )
 
 
-def validate_batch_sizes(embedding_batch_size: int, db_batch_size: int, provider: str) -> Tuple[bool, str]:
+def validate_batch_sizes(embedding_batch_size: int, db_batch_size: int, provider: str) -> tuple[bool, str]:
     """Validate batch size arguments against provider limits and system constraints.
 
     Args:
@@ -24,7 +24,7 @@ def validate_batch_sizes(embedding_batch_size: int, db_batch_size: int, provider
         Tuple of (is_valid, error_message)
     """
     # Provider-specific embedding batch limits
-    embedding_limits: Dict[str, Tuple[int, int]] = {
+    embedding_limits: dict[str, tuple[int, int]] = {
         'openai': (1, 2048),
         'openai-compatible': (1, 1000),
         'tei': (1, 512),
@@ -87,7 +87,7 @@ def process_batch_arguments(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def add_run_subparser(subparsers) -> argparse.ArgumentParser:
+def add_run_subparser(subparsers: Any) -> argparse.ArgumentParser:
     """Add run command subparser to the main parser.
 
     Args:
@@ -177,7 +177,7 @@ def add_run_subparser(subparsers) -> argparse.ArgumentParser:
         help="Clean up orphaned chunks from deleted files",
     )
 
-    return run_parser
+    return cast(argparse.ArgumentParser, run_parser)
 
 
-__all__ = ["add_run_subparser"]
+__all__: list[str] = ["add_run_subparser"]

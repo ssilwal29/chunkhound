@@ -36,7 +36,7 @@ class OpenAIEmbeddingProvider:
         max_tokens: int | None = None
     ):
         """Initialize OpenAI embedding provider.
-        
+
         Args:
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
             base_url: Base URL for OpenAI API (defaults to OPENAI_BASE_URL env var)
@@ -392,7 +392,7 @@ class OpenAIEmbeddingProvider:
     @with_openai_token_handling()
     async def _embed_batch_simple(self, texts: list[str]) -> list[list[float]]:
         """Simplified embedding method using the token limit decorator.
-        
+
         This demonstrates how future providers can use the decorator approach.
         """
         if not self._client:

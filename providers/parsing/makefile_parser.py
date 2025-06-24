@@ -1,7 +1,7 @@
 """Makefile language parser provider implementation for ChunkHound using tree-sitter."""
 
 from pathlib import Path
-from typing import Any, List, Dict
+from typing import Any
 
 from loguru import logger
 
@@ -71,26 +71,26 @@ class MakefileParser(TreeSitterParserBase):
             logger.error(f"Failed to initialize Makefile parser: {e}")
             return False
 
-    def _extract_chunks(self, tree_node: TSNode, source: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _extract_chunks(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
         """Extract semantic chunks from Makefile AST.
-        
+
         Args:
             tree_node: Root AST node
             source: Source code string
             file_path: Path to source file
-            
+
         Returns:
             List of extracted chunks
         """
         chunks = []
         source_lines = source.split('\n')
-        
+
         self._extract_makefile_constructs(tree_node, source, source_lines, file_path, chunks)
-        
+
         return chunks
 
-    def _extract_makefile_constructs(self, node: TSNode, source: str, source_lines: List[str], 
-                                   file_path: Path, chunks: List[Dict[str, Any]], parent: str = None) -> None:
+    def _extract_makefile_constructs(self, node: TSNode, source: str, source_lines: list[str],
+                                   file_path: Path, chunks: list[dict[str, Any]], parent: str = None) -> None:
         """Extract Makefile constructs (targets, variables, rules)."""
         if not node:
             return
@@ -100,11 +100,11 @@ class MakefileParser(TreeSitterParserBase):
         # Extract targets (rules)
         if node_type == "rule":
             self._extract_rule(node, source, file_path, chunks, parent)
-        
+
         # Extract variable definitions
         elif node_type in ["variable_assignment", "define_directive"]:
             self._extract_variable(node, source, file_path, chunks, parent)
-            
+
         # Extract comments
         elif node_type == "comment" and self._config.include_comments:
             self._extract_comment(node, source, file_path, chunks, parent)
@@ -113,25 +113,25 @@ class MakefileParser(TreeSitterParserBase):
         for child in node.children:
             self._extract_makefile_constructs(child, source, source_lines, file_path, chunks, parent)
 
-    def _extract_rule(self, node: TSNode, source: str, file_path: Path, 
-                     chunks: List[Dict[str, Any]], parent: str = None) -> None:
+    def _extract_rule(self, node: TSNode, source: str, file_path: Path,
+                     chunks: list[dict[str, Any]], parent: str = None) -> None:
         """Extract rule/target definition."""
         try:
             # Find the target name (first child is usually the targets)
             target_node = None
             recipe_node = None
-            
+
             for child in node.children:
                 if child.type == "targets":
                     target_node = child
                 elif child.type == "recipe":
                     recipe_node = child
-            
+
             if target_node:
                 target_text = self._get_node_text(target_node, source).strip()
                 # Take the first target if multiple
                 target_name = target_text.split()[0] if target_text else "unknown"
-                
+
                 # Create chunk for the entire rule
                 chunk = self._create_chunk(
                     node, source, file_path, ChunkType.FUNCTION, target_name,
@@ -141,13 +141,13 @@ class MakefileParser(TreeSitterParserBase):
                     targets=target_text
                 )
                 chunks.append(chunk)
-                
+
                 # If there's a recipe, create a separate chunk for it
                 if recipe_node:
                     recipe_text = self._get_node_text(recipe_node, source).strip()
                     if recipe_text:
                         recipe_chunk = self._create_chunk(
-                            recipe_node, source, file_path, ChunkType.BLOCK, 
+                            recipe_node, source, file_path, ChunkType.BLOCK,
                             f"{target_name}_recipe",
                             display_name=f"{target_name} recipe",
                             parent=target_name,
@@ -158,12 +158,12 @@ class MakefileParser(TreeSitterParserBase):
         except Exception as e:
             logger.debug(f"Error extracting rule: {e}")
 
-    def _extract_variable(self, node: TSNode, source: str, file_path: Path, 
-                         chunks: List[Dict[str, Any]], parent: str = None) -> None:
+    def _extract_variable(self, node: TSNode, source: str, file_path: Path,
+                         chunks: list[dict[str, Any]], parent: str = None) -> None:
         """Extract variable definition."""
         try:
             node_text = self._get_node_text(node, source)
-            
+
             # Extract variable name
             var_name = "unknown"
             if node.type == "variable_assignment":
@@ -178,7 +178,7 @@ class MakefileParser(TreeSitterParserBase):
                     first_line = lines[0].strip()
                     if first_line.startswith('define'):
                         var_name = first_line[6:].strip()
-            
+
             chunk = self._create_chunk(
                 node, source, file_path, ChunkType.FIELD, var_name,
                 display_name=f"variable {var_name}",
@@ -190,16 +190,16 @@ class MakefileParser(TreeSitterParserBase):
         except Exception as e:
             logger.debug(f"Error extracting variable: {e}")
 
-    def _extract_comment(self, node: TSNode, source: str, file_path: Path, 
-                        chunks: List[Dict[str, Any]], parent: str = None) -> None:
+    def _extract_comment(self, node: TSNode, source: str, file_path: Path,
+                        chunks: list[dict[str, Any]], parent: str = None) -> None:
         """Extract comment."""
         try:
             comment_text = self._get_node_text(node, source).strip()
-            
+
             # Only extract meaningful comments (not just single # lines)
             if len(comment_text) > 10:
                 chunk = self._create_chunk(
-                    node, source, file_path, ChunkType.BLOCK, 
+                    node, source, file_path, ChunkType.BLOCK,
                     f"comment_{node.start_point[0]}",
                     display_name="comment",
                     parent=parent,

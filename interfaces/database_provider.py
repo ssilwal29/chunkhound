@@ -1,12 +1,9 @@
 """DatabaseProvider protocol for ChunkHound - abstract interface for database implementations."""
 
-import asyncio
-from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, Protocol
+from typing import Any, Protocol
 
-from core.models import File, Chunk, Embedding, EmbeddingResult
-from core.types import ChunkType, Language, FilePath, FileId, ChunkId, Timestamp
+from core.models import Chunk, Embedding, File
 
 
 class DatabaseProvider(Protocol):
@@ -17,7 +14,7 @@ class DatabaseProvider(Protocol):
     """
 
     @property
-    def db_path(self) -> Union[Path, str]:
+    def db_path(self) -> Path | str:
         """Database connection path or identifier."""
         ...
 
@@ -57,11 +54,11 @@ class DatabaseProvider(Protocol):
         """Insert file record and return file ID."""
         ...
 
-    def get_file_by_path(self, path: str, as_model: bool = False) -> Optional[Union[Dict[str, Any], File]]:
+    def get_file_by_path(self, path: str, as_model: bool = False) -> dict[str, Any] | File | None:
         """Get file record by path."""
         ...
 
-    def get_file_by_id(self, file_id: int, as_model: bool = False) -> Optional[Union[Dict[str, Any], File]]:
+    def get_file_by_id(self, file_id: int, as_model: bool = False) -> dict[str, Any] | File | None:
         """Get file record by ID."""
         ...
 
@@ -78,15 +75,15 @@ class DatabaseProvider(Protocol):
         """Insert chunk record and return chunk ID."""
         ...
 
-    def insert_chunks_batch(self, chunks: List[Chunk]) -> List[int]:
+    def insert_chunks_batch(self, chunks: list[Chunk]) -> list[int]:
         """Insert multiple chunks in batch and return chunk IDs."""
         ...
 
-    def get_chunk_by_id(self, chunk_id: int, as_model: bool = False) -> Optional[Union[Dict[str, Any], Chunk]]:
+    def get_chunk_by_id(self, chunk_id: int, as_model: bool = False) -> dict[str, Any] | Chunk | None:
         """Get chunk record by ID."""
         ...
 
-    def get_chunks_by_file_id(self, file_id: int, as_model: bool = False) -> List[Union[Dict[str, Any], Chunk]]:
+    def get_chunks_by_file_id(self, file_id: int, as_model: bool = False) -> list[dict[str, Any] | Chunk]:
         """Get all chunks for a specific file."""
         ...
 
@@ -103,7 +100,7 @@ class DatabaseProvider(Protocol):
         """Insert embedding record and return embedding ID."""
         ...
 
-    def insert_embeddings_batch(self, embeddings_data: List[Dict], batch_size: Optional[int] = None, connection=None) -> int:
+    def insert_embeddings_batch(self, embeddings_data: list[dict], batch_size: int | None = None, connection=None) -> int:
         """Insert multiple embedding vectors with optimization.
 
         Args:
@@ -113,11 +110,11 @@ class DatabaseProvider(Protocol):
         """
         ...
 
-    def get_embedding_by_chunk_id(self, chunk_id: int, provider: str, model: str) -> Optional[Embedding]:
+    def get_embedding_by_chunk_id(self, chunk_id: int, provider: str, model: str) -> Embedding | None:
         """Get embedding for specific chunk, provider, and model."""
         ...
 
-    def get_existing_embeddings(self, chunk_ids: List[int], provider: str, model: str) -> Set[int]:
+    def get_existing_embeddings(self, chunk_ids: list[int], provider: str, model: str) -> set[int]:
         """Get set of chunk IDs that already have embeddings for given provider/model."""
         ...
 
@@ -128,38 +125,38 @@ class DatabaseProvider(Protocol):
     # Search Operations
     def search_semantic(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         provider: str,
         model: str,
         limit: int = 10,
-        threshold: Optional[float] = None
-    ) -> List[Dict[str, Any]]:
+        threshold: float | None = None
+    ) -> list[dict[str, Any]]:
         """Perform semantic vector search."""
         ...
 
-    def search_regex(self, pattern: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def search_regex(self, pattern: str, limit: int = 10) -> list[dict[str, Any]]:
         """Perform regex search on code content."""
         ...
 
-    def search_text(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def search_text(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Perform full-text search on code content."""
         ...
 
     # Statistics and Monitoring
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> dict[str, int]:
         """Get database statistics (file count, chunk count, etc.)."""
         ...
 
-    def get_file_stats(self, file_id: int) -> Dict[str, Any]:
+    def get_file_stats(self, file_id: int) -> dict[str, Any]:
         """Get statistics for a specific file."""
         ...
 
-    def get_provider_stats(self, provider: str, model: str) -> Dict[str, Any]:
+    def get_provider_stats(self, provider: str, model: str) -> dict[str, Any]:
         """Get statistics for a specific embedding provider/model."""
         ...
 
     # Transaction and Bulk Operations
-    def execute_query(self, query: str, params: Optional[List[Any]] = None) -> List[Dict[str, Any]]:
+    def execute_query(self, query: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
         """Execute a SQL query and return results."""
         ...
 
@@ -176,28 +173,28 @@ class DatabaseProvider(Protocol):
         ...
 
     # File Processing Integration
-    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> Dict[str, Any]:
+    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> dict[str, Any]:
         """Process a file end-to-end: parse, chunk, and store in database."""
         ...
 
-    async def process_file_incremental(self, file_path: Path) -> Dict[str, Any]:
+    async def process_file_incremental(self, file_path: Path) -> dict[str, Any]:
         """Process a file with incremental parsing and differential chunking."""
         ...
 
     async def process_directory(
         self,
         directory: Path,
-        patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None
+    ) -> dict[str, Any]:
         """Process all supported files in a directory."""
         ...
 
     # Health and Diagnostics
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Perform health check and return status information."""
         ...
 
-    def get_connection_info(self) -> Dict[str, Any]:
+    def get_connection_info(self) -> dict[str, Any]:
         """Get information about the database connection."""
         ...

@@ -7,10 +7,10 @@ from .parsing import PythonParser
 __all__ = [
     # Database providers
     "DuckDBProvider",
-    
+
     # Embedding providers
     "OpenAIEmbeddingProvider",
-    
+
     # Parsing providers
     "PythonParser",
 ]

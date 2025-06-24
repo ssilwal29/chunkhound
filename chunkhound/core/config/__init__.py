@@ -11,10 +11,10 @@ This package provides a unified configuration system that supports:
 from .embedding_config import EmbeddingConfig
 from .embedding_factory import EmbeddingProviderFactory
 from .settings_sources import (
-    YamlConfigSettingsSource,
-    TomlConfigSettingsSource,
-    JsonConfigSettingsSource,
     FilteredCliSettingsSource,
+    JsonConfigSettingsSource,
+    TomlConfigSettingsSource,
+    YamlConfigSettingsSource,
     create_config_sources,
     find_config_files,
 )

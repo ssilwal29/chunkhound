@@ -2,11 +2,12 @@
 
 import argparse
 import asyncio
-import sys
 import os
+import sys
+
 
 # Check for MCP command early to avoid any imports that trigger logging
-def is_mcp_command():
+def is_mcp_command() -> bool:
     """Check if this is an MCP command before any imports."""
     return len(sys.argv) >= 2 and sys.argv[1] == "mcp"
 
@@ -48,8 +49,13 @@ if is_mcp_command():
     sys.exit(0)
 
 from loguru import logger
+
 # All imports deferred to avoid early module loading during MCP detection
-from .utils.validation import validate_path, ensure_database_directory, exit_on_validation_error
+from .utils.validation import (
+    ensure_database_directory,
+    exit_on_validation_error,
+    validate_path,
+)
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -109,9 +115,9 @@ def create_parser() -> argparse.ArgumentParser:
     """
     # Import parsers dynamically to avoid early loading
     from .parsers import create_main_parser, setup_subparsers
-    from .parsers.run_parser import add_run_subparser
-    from .parsers.mcp_parser import add_mcp_subparser
     from .parsers.config_parser import add_config_subparser
+    from .parsers.mcp_parser import add_mcp_subparser
+    from .parsers.run_parser import add_run_subparser
 
     parser = create_main_parser()
     subparsers = setup_subparsers(parser)
@@ -135,7 +141,7 @@ async def async_main() -> None:
 
     # Setup logging for non-MCP commands (MCP already handled above)
     setup_logging(getattr(args, "verbose", False))
-    def validate_args(args):
+    def validate_args(args: argparse.Namespace) -> None:
         """Validate arguments."""
         # Add any validation logic here if needed
         pass

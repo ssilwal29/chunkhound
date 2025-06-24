@@ -3,10 +3,9 @@
 __version__ = "1.1.0"
 
 # Test configuration and utilities
-import os
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 

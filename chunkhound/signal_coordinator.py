@@ -6,7 +6,7 @@ import os
 import signal
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -16,7 +16,7 @@ from .process_detection import ProcessDetector
 class SignalCoordinator:
     """Coordinate database access between MCP server and CLI processes using signals."""
 
-    def __init__(self, db_path: Path, database_manager):
+    def __init__(self, db_path: Path, database_manager: Any) -> None:
         """Initialize signal coordinator.
 
         Args:
@@ -31,8 +31,8 @@ class SignalCoordinator:
         # State tracking
         self._coordination_active = False
         self._shutdown_requested = False
-        self._original_handlers: Dict[int, Any] = {}
-        self._original_db_path: Optional[Path] = None
+        self._original_handlers: dict[int, Any] = {}
+        self._original_db_path: Path | None = None
 
         # Ensure coordination directory exists
         self._ensure_coordination_dir()
@@ -77,7 +77,7 @@ class SignalCoordinator:
             logger.error(f"Failed to setup signal handling: {e}")
             raise
 
-    def _handle_shutdown_request(self, signum: int, frame) -> None:
+    def _handle_shutdown_request(self, signum: int, frame: Any) -> None:
         """Handle SIGUSR1 - request to shutdown database access."""
         logger.info("Received shutdown request (SIGUSR1)")
 
@@ -90,7 +90,7 @@ class SignalCoordinator:
             logger.warning("No event loop available, handling shutdown synchronously")
             asyncio.run(self._graceful_database_shutdown())
 
-    def _handle_reopen_request(self, signum: int, frame) -> None:
+    def _handle_reopen_request(self, signum: int, frame: Any) -> None:
         """Handle SIGUSR2 - request to reopen database access."""
         logger.info("Received reopen request (SIGUSR2)")
 
@@ -103,7 +103,7 @@ class SignalCoordinator:
             logger.warning("No event loop available, handling reopen synchronously")
             asyncio.run(self._graceful_database_reopen())
 
-    def _handle_terminate(self, signum: int, frame) -> None:
+    def _handle_terminate(self, signum: int, frame: Any) -> None:
         """Handle SIGTERM/SIGINT - cleanup and exit."""
         logger.info(f"Received termination signal ({signum})")
         self._shutdown_requested = True
@@ -267,7 +267,7 @@ class SignalCoordinator:
         else:
             logger.warning("Indexing completion not confirmed")
 
-    def send_coordination_signal(self, signal_type: str, target_pid: Optional[int] = None) -> bool:
+    def send_coordination_signal(self, signal_type: str, target_pid: int | None = None) -> bool:
         """Send coordination signal to MCP server.
 
         Args:
@@ -374,11 +374,11 @@ class SignalCoordinator:
         """Check if MCP server is currently running."""
         return self.process_detector.is_mcp_server_running()
 
-    def __enter__(self):
+    def __enter__(self) -> 'SignalCoordinator':
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit - cleanup resources."""
         self._restore_signal_handlers()
         self.cleanup_coordination_files()
@@ -454,11 +454,11 @@ class CLICoordinator:
 
         return success
 
-    def __enter__(self):
+    def __enter__(self) -> 'CLICoordinator':
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit - ensure cleanup."""
         if self._coordination_active:
             self.release_database_access()

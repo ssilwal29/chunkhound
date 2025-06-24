@@ -7,13 +7,12 @@ for search indexing.
 """
 
 import json
-import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 import yaml
 
-from core.types.common import Language, ChunkType
-from interfaces.language_parser import LanguageParser
+from core.types.common import ChunkType, Language
 
 
 class TextParser:
@@ -27,7 +26,7 @@ class TextParser:
         """
         self._language = language
 
-    def parse_file(self, file_path: Path) -> List[Dict[str, Any]]:
+    def parse_file(self, file_path: Path) -> list[dict[str, Any]]:
         """Parse a text-based file and extract searchable chunks.
 
         Args:
@@ -38,7 +37,7 @@ class TextParser:
         """
         try:
             # Read file content
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 content = f.read().strip()
 
             if not content:
@@ -64,7 +63,7 @@ class TextParser:
                 "file_path": str(file_path)
             }]
 
-    def _parse_json(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _parse_json(self, content: str, file_path: Path) -> list[dict[str, Any]]:
         """Parse JSON content into searchable chunks."""
         chunks = []
 
@@ -89,7 +88,7 @@ class TextParser:
 
         return chunks
 
-    def _parse_yaml(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _parse_yaml(self, content: str, file_path: Path) -> list[dict[str, Any]]:
         """Parse YAML content into searchable chunks."""
         chunks = []
 
@@ -114,7 +113,7 @@ class TextParser:
 
         return chunks
 
-    def _parse_text(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _parse_text(self, content: str, file_path: Path) -> list[dict[str, Any]]:
         """Parse plain text content into searchable chunks."""
         chunks = []
         lines = content.split('\n')
@@ -173,7 +172,7 @@ class TextParser:
 
         return chunks
 
-    def _extract_json_chunks(self, data: Any, file_path: Path, prefix: str = "") -> List[Dict[str, Any]]:
+    def _extract_json_chunks(self, data: Any, file_path: Path, prefix: str = "") -> list[dict[str, Any]]:
         """Extract searchable chunks from JSON data structure."""
         chunks = []
 
@@ -204,7 +203,7 @@ class TextParser:
 
         return chunks
 
-    def _extract_yaml_chunks(self, data: Any, raw_content: str, file_path: Path, prefix: str = "") -> List[Dict[str, Any]]:
+    def _extract_yaml_chunks(self, data: Any, raw_content: str, file_path: Path, prefix: str = "") -> list[dict[str, Any]]:
         """Extract searchable chunks from YAML data structure."""
         chunks = []
 
@@ -229,7 +228,7 @@ class TextParser:
 
         return chunks
 
-    def _split_yaml_sections(self, content: str) -> List[str]:
+    def _split_yaml_sections(self, content: str) -> list[str]:
         """Split YAML content into logical sections based on top-level keys."""
         sections = []
         current_section = []
@@ -251,7 +250,7 @@ class TextParser:
 
         return sections
 
-    def _extract_yaml_data_chunks(self, data: Any, file_path: Path, prefix: str = "") -> List[Dict[str, Any]]:
+    def _extract_yaml_data_chunks(self, data: Any, file_path: Path, prefix: str = "") -> list[dict[str, Any]]:
         """Extract chunks from YAML data structure when section splitting fails."""
         chunks = []
 

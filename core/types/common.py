@@ -6,9 +6,8 @@ and runtime type checking capabilities.
 """
 
 from enum import Enum
-from typing import List, Union, NewType
 from pathlib import Path
-
+from typing import NewType
 
 # String-based type aliases for better semantic clarity
 ProviderName = NewType("ProviderName", str)  # e.g., "openai", "bge"
@@ -25,7 +24,7 @@ Distance = NewType("Distance", float)       # Vector distance/similarity score
 Dimensions = NewType("Dimensions", int)     # Embedding vector dimensions
 
 # Complex types
-EmbeddingVector = List[float]              # Vector embedding representation
+EmbeddingVector = list[float]              # Vector embedding representation
 
 
 class ChunkType(Enum):
@@ -50,7 +49,7 @@ class ChunkType(Enum):
     COMPANION_OBJECT = "companion_object"
     DATA_CLASS = "data_class"
     EXTENSION_FUNCTION = "extension_function"
-    
+
     # C-specific types
     VARIABLE = "variable"
     TYPE = "type"
@@ -137,7 +136,7 @@ class Language(Enum):
     UNKNOWN = "unknown"
 
     @classmethod
-    def from_file_extension(cls, file_path: Union[str, Path]) -> "Language":
+    def from_file_extension(cls, file_path: str | Path) -> "Language":
         """Determine language from file extension and filename."""
         if isinstance(file_path, str):
             file_path = Path(file_path)
@@ -148,7 +147,7 @@ class Language(Enum):
             'makefile': cls.MAKEFILE,
             'gnumakefile': cls.MAKEFILE,
         }
-        
+
         if basename in filename_map:
             return filename_map[basename]
 

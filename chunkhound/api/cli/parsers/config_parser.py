@@ -2,16 +2,17 @@
 
 import argparse
 from pathlib import Path
+from typing import Any, cast
 
 from .main_parser import add_common_arguments
 
 
-def add_config_subparser(subparsers) -> argparse.ArgumentParser:
+def add_config_subparser(subparsers: Any) -> argparse.ArgumentParser:
     """Add config command subparser to the main parser.
-    
+
     Args:
         subparsers: Subparsers object from the main argument parser
-        
+
     Returns:
         The configured config subparser
     """
@@ -20,374 +21,374 @@ def add_config_subparser(subparsers) -> argparse.ArgumentParser:
         help="Manage embedding server configurations",
         description="Configure and manage embedding server connections"
     )
-    
+
     add_common_arguments(config_parser)
-    
+
     config_subparsers = config_parser.add_subparsers(
-        dest="config_command", 
+        dest="config_command",
         help="Configuration commands",
         required=True
     )
-    
+
     # Config list command
     list_parser = config_subparsers.add_parser(
-        "list", 
+        "list",
         help="List all configured servers"
     )
     list_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     list_parser.add_argument(
-        "--show-health", 
-        action="store_true", 
+        "--show-health",
+        action="store_true",
         help="Show health status for each server"
     )
-    
+
     # Config add command
     add_parser = config_subparsers.add_parser(
-        "add", 
+        "add",
         help="Add a new embedding server"
     )
     add_parser.add_argument(
-        "name", 
+        "name",
         help="Server name"
     )
     add_parser.add_argument(
-        "--type", 
+        "--type",
         required=True,
         choices=["openai", "openai-compatible", "tei", "bge-in-icl"],
         help="Server type"
     )
     add_parser.add_argument(
-        "--base-url", 
+        "--base-url",
         required=True,
         help="Server base URL"
     )
     add_parser.add_argument(
-        "--model", 
+        "--model",
         help="Model name (auto-detected for TEI, defaults to 'bge-in-icl' for BGE-IN-ICL)"
     )
     add_parser.add_argument(
-        "--api-key", 
+        "--api-key",
         help="API key for authentication"
     )
     add_parser.add_argument(
-        "--default", 
+        "--default",
         action="store_true",
         help="Set as default server"
     )
     add_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     add_parser.add_argument(
-        "--batch-size", 
+        "--batch-size",
         type=int,
         help="Batch size for embeddings"
     )
     add_parser.add_argument(
-        "--timeout", 
+        "--timeout",
         type=float,
         help="Request timeout in seconds"
     )
     add_parser.add_argument(
-        "--max-retries", 
+        "--max-retries",
         type=int,
         help="Maximum number of retries"
     )
-    
+
     # Config remove command
     remove_parser = config_subparsers.add_parser(
-        "remove", 
+        "remove",
         help="Remove a server"
     )
     remove_parser.add_argument(
-        "name", 
+        "name",
         help="Server name to remove"
     )
     remove_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     remove_parser.add_argument(
-        "--force", 
+        "--force",
         action="store_true",
         help="Force removal without confirmation"
     )
-    
+
     # Config test command
     test_parser = config_subparsers.add_parser(
-        "test", 
+        "test",
         help="Test server connectivity"
     )
     test_parser.add_argument(
-        "name", 
-        nargs="?", 
+        "name",
+        nargs="?",
         help="Server name to test (uses default if not specified)"
     )
     test_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     test_parser.add_argument(
-        "--timeout", 
+        "--timeout",
         type=float,
         default=30.0,
         help="Test timeout in seconds (default: 30)"
     )
-    
+
     # Config health command
     health_parser = config_subparsers.add_parser(
-        "health", 
+        "health",
         help="Check server health"
     )
     health_parser.add_argument(
-        "--monitor", 
+        "--monitor",
         action="store_true",
         help="Start continuous monitoring"
     )
     health_parser.add_argument(
-        "--interval", 
+        "--interval",
         type=int,
         default=10,
         help="Monitoring interval in seconds (default: 10)"
     )
     health_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
-    
+
     # Config enable command
     enable_parser = config_subparsers.add_parser(
-        "enable", 
+        "enable",
         help="Enable a server"
     )
     enable_parser.add_argument(
-        "name", 
+        "name",
         help="Server name to enable"
     )
     enable_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
-    
+
     # Config disable command
     disable_parser = config_subparsers.add_parser(
-        "disable", 
+        "disable",
         help="Disable a server"
     )
     disable_parser.add_argument(
-        "name", 
+        "name",
         help="Server name to disable"
     )
     disable_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
-    
+
     # Config set-default command
     default_parser = config_subparsers.add_parser(
-        "set-default", 
+        "set-default",
         help="Set default server"
     )
     default_parser.add_argument(
-        "name", 
+        "name",
         help="Server name to set as default"
     )
     default_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
-    
+
     # Config validate command
     validate_parser = config_subparsers.add_parser(
-        "validate", 
+        "validate",
         help="Validate configuration"
     )
     validate_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     validate_parser.add_argument(
-        "--strict", 
+        "--strict",
         action="store_true",
         help="Enable strict validation"
     )
-    
+
     # Config benchmark command
     benchmark_parser = config_subparsers.add_parser(
-        "benchmark", 
+        "benchmark",
         help="Benchmark server performance"
     )
     benchmark_parser.add_argument(
-        "name", 
-        nargs="?", 
+        "name",
+        nargs="?",
         help="Server name to benchmark (tests all enabled if not specified)"
     )
     benchmark_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     benchmark_parser.add_argument(
-        "--iterations", 
+        "--iterations",
         type=int,
         default=10,
         help="Number of benchmark iterations (default: 10)"
     )
     benchmark_parser.add_argument(
-        "--concurrent", 
+        "--concurrent",
         type=int,
         default=1,
         help="Number of concurrent requests (default: 1)"
     )
-    
+
     # Config switch command
     switch_parser = config_subparsers.add_parser(
-        "switch", 
+        "switch",
         help="Switch between server configurations"
     )
     switch_parser.add_argument(
-        "name", 
+        "name",
         help="Server name to switch to"
     )
     switch_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
-    
+
     # Config discover command
     discover_parser = config_subparsers.add_parser(
-        "discover", 
+        "discover",
         help="Discover configuration files"
     )
     discover_parser.add_argument(
-        "path", 
-        nargs="?", 
+        "path",
+        nargs="?",
         type=Path,
         help="Directory to search (default: current directory)"
     )
     discover_parser.add_argument(
-        "--show-all", 
+        "--show-all",
         action="store_true",
         help="Show invalid configurations too"
     )
     discover_parser.add_argument(
-        "--recursive", 
+        "--recursive",
         action="store_true",
         default=True,
         help="Search recursively (default: true)"
     )
-    
+
     # Config export command
     export_parser = config_subparsers.add_parser(
-        "export", 
+        "export",
         help="Export configuration"
     )
     export_parser.add_argument(
-        "output", 
+        "output",
         type=Path,
         help="Output file path"
     )
     export_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     export_parser.add_argument(
-        "--format", 
+        "--format",
         choices=["yaml", "json"],
         default="yaml",
         help="Export format (default: yaml)"
     )
     export_parser.add_argument(
-        "--servers", 
+        "--servers",
         nargs="*",
         help="Specific servers to export (exports all if not specified)"
     )
-    
+
     # Config import command
     import_parser = config_subparsers.add_parser(
-        "import", 
+        "import",
         help="Import configuration"
     )
     import_parser.add_argument(
-        "input", 
+        "input",
         type=Path,
         help="Input file path"
     )
     import_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     import_parser.add_argument(
-        "--merge", 
+        "--merge",
         action="store_true",
         help="Merge with existing configuration"
     )
     import_parser.add_argument(
-        "--overwrite", 
+        "--overwrite",
         action="store_true",
         help="Overwrite existing servers"
     )
-    
+
     # Config template command
     template_parser = config_subparsers.add_parser(
-        "template", 
+        "template",
         help="Generate configuration templates"
     )
     template_parser.add_argument(
-        "type", 
+        "type",
         choices=["basic", "openai", "tei", "bge-in-icl", "multi"],
         help="Template type to generate"
     )
     template_parser.add_argument(
-        "--output", 
+        "--output",
         type=Path,
         help="Output file path (prints to stdout if not specified)"
     )
     template_parser.add_argument(
-        "--format", 
+        "--format",
         choices=["yaml", "json"],
         default="yaml",
         help="Template format (default: yaml)"
     )
-    
+
     # Config batch-test command
     batch_test_parser = config_subparsers.add_parser(
-        "batch-test", 
+        "batch-test",
         help="Test all enabled servers"
     )
     batch_test_parser.add_argument(
-        "--config", 
-        type=Path, 
+        "--config",
+        type=Path,
         help="Configuration file path"
     )
     batch_test_parser.add_argument(
-        "--timeout", 
+        "--timeout",
         type=float,
         default=30.0,
         help="Test timeout per server in seconds (default: 30)"
     )
     batch_test_parser.add_argument(
-        "--parallel", 
+        "--parallel",
         action="store_true",
         help="Run tests in parallel"
     )
-    
-    return config_parser
+
+    return cast(argparse.ArgumentParser, config_parser)
 
 
-__all__ = ["add_config_subparser"]
+__all__: list[str] = ["add_config_subparser"]

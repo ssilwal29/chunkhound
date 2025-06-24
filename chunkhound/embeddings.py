@@ -3,17 +3,14 @@
 import asyncio
 import os
 import sys
-import aiohttp
-
 import time
-
-from typing import List, Optional, Protocol, Dict, Any
 from dataclasses import dataclass, field
+from typing import Any, Protocol
 
+import aiohttp
 from loguru import logger
 
 # Core domain models
-from core.models import Embedding, EmbeddingResult
 
 try:
     import openai
@@ -64,7 +61,7 @@ class EmbeddingProvider(Protocol):
         """Maximum batch size for embedding requests."""
         ...
 
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a list of texts.
 
         Args:
@@ -79,11 +76,11 @@ class EmbeddingProvider(Protocol):
 @dataclass
 class LocalEmbeddingResult:
     """Local result from embedding operation (legacy)."""
-    embeddings: List[List[float]]
+    embeddings: list[list[float]]
     model: str
     provider: str
     dims: int
-    total_tokens: Optional[int] = None
+    total_tokens: int | None = None
 
 
 class OpenAIEmbeddingProvider:
@@ -91,8 +88,8 @@ class OpenAIEmbeddingProvider:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         model: str = "text-embedding-3-small",
         batch_size: int = 100,
     ):
@@ -117,7 +114,7 @@ class OpenAIEmbeddingProvider:
             raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
 
         # Initialize OpenAI client
-        client_kwargs: Dict[str, Any] = {"api_key": self._api_key}
+        client_kwargs: dict[str, Any] = {"api_key": self._api_key}
         if self._base_url:
             client_kwargs["base_url"] = self._base_url
 
@@ -129,7 +126,7 @@ class OpenAIEmbeddingProvider:
                     print("OpenAI client initialized successfully", file=sys.stderr)
                     print("===============================================", file=sys.stderr)
             else:
-                if os.environ.get("CHUNKHOUND_DEBUG"):
+                if os.environ.get("CHUNKHOUND_DEBUG"):  # type: ignore[unreachable]
                     print("OpenAI package is None", file=sys.stderr)
                     print("===============================================", file=sys.stderr)
                 raise ImportError("OpenAI package not available")
@@ -210,7 +207,7 @@ class OpenAIEmbeddingProvider:
         """
         return self._model_token_limits.get(self._model, 8192)
 
-    def create_token_aware_batches(self, texts: List[str]) -> List[List[str]]:
+    def create_token_aware_batches(self, texts: list[str]) -> list[list[str]]:
         """Create batches that respect token limits.
 
         Args:
@@ -224,7 +221,7 @@ class OpenAIEmbeddingProvider:
 
         token_limit = self.get_token_limit()
         batches = []
-        current_batch = []
+        current_batch: list[str] = []
         current_tokens = 0
         skipped_count = 0
 
@@ -261,7 +258,7 @@ class OpenAIEmbeddingProvider:
         logger.debug(f"Created {len(batches)} token-aware batches from {len(texts)} texts")
         return batches
 
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using OpenAI API with token limit validation.
 
         Args:
@@ -283,7 +280,7 @@ class OpenAIEmbeddingProvider:
                 logger.warning("No valid batches created - all texts may exceed token limits")
                 return []
 
-            all_embeddings: List[List[float]] = []
+            all_embeddings: list[list[float]] = []
 
             for batch_idx, batch in enumerate(token_aware_batches):
                 if not batch:  # Skip empty batches
@@ -326,7 +323,7 @@ class OpenAICompatibleProvider:
         self,
         base_url: str,
         model: str,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         batch_size: int = 100,
         provider_name: str = "openai-compatible",
         timeout: int = 60,
@@ -349,7 +346,7 @@ class OpenAICompatibleProvider:
         self._timeout = timeout
 
         # Will be auto-detected on first use
-        self._dims: Optional[int] = None
+        self._dims: int | None = None
         self._distance = "cosine"  # Default for most embedding models
 
         logger.info(f"OpenAI-compatible provider initialized: {self._provider_name} (base_url: {self._base_url}, model: {self._model})")
@@ -376,7 +373,7 @@ class OpenAICompatibleProvider:
     def batch_size(self) -> int:
         return self._batch_size
 
-    async def _detect_model_info(self) -> Optional[Dict[str, Any]]:
+    async def _detect_model_info(self) -> dict[str, Any] | None:
         """Try to auto-detect model information from server."""
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
@@ -397,7 +394,7 @@ class OpenAICompatibleProvider:
                             if response.status == 200:
                                 data = await response.json()
                                 logger.debug(f"Model info detected from {endpoint}: {data}")
-                                return data
+                                return data if isinstance(data, dict) else None
                     except Exception as e:
                         logger.debug(f"Failed to get model info from {endpoint}: {e}")
                         continue
@@ -407,7 +404,7 @@ class OpenAICompatibleProvider:
 
         return None
 
-    async def _detect_capabilities(self, sample_embedding: List[float]) -> None:
+    async def _detect_capabilities(self, sample_embedding: list[float]) -> None:
         """Auto-detect model capabilities from a sample embedding."""
         self._dims = len(sample_embedding)
         logger.info(f"Auto-detected embedding dimensions: {self._dims} for model {self._model}")
@@ -432,7 +429,7 @@ class OpenAICompatibleProvider:
                     self._model = model_info["models"][0]
                     logger.info(f"Auto-detected model name: {self._model}")
 
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using OpenAI-compatible API.
 
         Args:
@@ -448,7 +445,7 @@ class OpenAICompatibleProvider:
 
         try:
             # Process in batches to respect API limits
-            all_embeddings: List[List[float]] = []
+            all_embeddings: list[list[float]] = []
 
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self._timeout)) as session:
                 for i in range(0, len(texts), self.batch_size):
@@ -504,10 +501,10 @@ class TEIProvider(OpenAICompatibleProvider):
     def __init__(
         self,
         base_url: str,
-        model: Optional[str] = None,
+        model: str | None = None,
         batch_size: int = 32,  # TEI typically works better with smaller batches
-        **kwargs
-    ):
+        **kwargs: Any
+    ) -> None:
         """Initialize TEI provider with TEI-specific optimizations.
 
         Args:
@@ -529,7 +526,7 @@ class TEIProvider(OpenAICompatibleProvider):
 
         logger.info(f"TEI provider initialized with optimized batch size: {batch_size}")
 
-    async def _detect_capabilities(self, sample_embedding: List[float]) -> None:
+    async def _detect_capabilities(self, sample_embedding: list[float]) -> None:
         """TEI-specific capability detection."""
         await super()._detect_capabilities(sample_embedding)
 
@@ -542,9 +539,9 @@ class TEIProvider(OpenAICompatibleProvider):
 class EmbeddingManager:
     """Manages embedding providers and generation."""
 
-    def __init__(self):
-        self._providers: Dict[str, EmbeddingProvider] = {}
-        self._default_provider: Optional[str] = None
+    def __init__(self) -> None:
+        self._providers: dict[str, EmbeddingProvider] = {}
+        self._default_provider: str | None = None
 
     def register_provider(self, provider: EmbeddingProvider, set_default: bool = False) -> None:
         """Register an embedding provider.
@@ -560,7 +557,7 @@ class EmbeddingManager:
             self._default_provider = provider.name
             logger.info(f"Set default embedding provider: {provider.name}")
 
-    def get_provider(self, name: Optional[str] = None) -> EmbeddingProvider:
+    def get_provider(self, name: str | None = None) -> EmbeddingProvider:
         """Get an embedding provider by name.
 
         Args:
@@ -579,14 +576,14 @@ class EmbeddingManager:
 
         return self._providers[name]
 
-    def list_providers(self) -> List[str]:
+    def list_providers(self) -> list[str]:
         """List all registered provider names."""
         return list(self._providers.keys())
 
     async def embed_texts(
         self,
-        texts: List[str],
-        provider_name: Optional[str] = None,
+        texts: list[str],
+        provider_name: str | None = None,
     ) -> LocalEmbeddingResult:
         """Generate embeddings for texts using specified provider.
 
@@ -610,8 +607,8 @@ class EmbeddingManager:
 
 
 def create_openai_provider(
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
     model: str = "text-embedding-3-small",
 ) -> OpenAIEmbeddingProvider:
     """Create an OpenAI embedding provider with default settings.
@@ -634,9 +631,9 @@ def create_openai_provider(
 def create_openai_compatible_provider(
     base_url: str,
     model: str,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     provider_name: str = "openai-compatible",
-    **kwargs
+    **kwargs: Any
 ) -> OpenAICompatibleProvider:
     """Create a generic OpenAI-compatible embedding provider.
 
@@ -661,8 +658,8 @@ def create_openai_compatible_provider(
 
 def create_tei_provider(
     base_url: str,
-    model: Optional[str] = None,
-    **kwargs
+    model: str | None = None,
+    **kwargs: Any
 ) -> TEIProvider:
     """Create a TEI (Text Embeddings Inference) optimized provider.
 
@@ -688,8 +685,8 @@ class PerformanceMetrics:
     total_texts: int = 0
     total_time: float = 0.0
     total_context_time: float = 0.0
-    batch_sizes: List[int] = field(default_factory=list)
-    response_times: List[float] = field(default_factory=list)
+    batch_sizes: list[int] = field(default_factory=list)
+    response_times: list[float] = field(default_factory=list)
     context_hits: int = 0
     context_misses: int = 0
 
@@ -717,10 +714,10 @@ class ICLContextManager:
             cache_size: Maximum number of cached context templates
             similarity_threshold: Minimum similarity score for context reuse
         """
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache: dict[str, dict[str, Any]] = {}
         self._cache_size = cache_size
         self._similarity_threshold = similarity_threshold
-        self._context_scores: Dict[str, float] = {}  # Track context quality scores
+        self._context_scores: dict[str, float] = {}  # Track context quality scores
 
         # Default context templates for different programming languages
         self._language_templates = {
@@ -768,7 +765,7 @@ class ICLContextManager:
             }
         }
 
-    def get_context_for_language(self, language: str, text: str) -> Dict[str, Any]:
+    def get_context_for_language(self, language: str, text: str) -> dict[str, Any]:
         """Get ICL context for a specific programming language with similarity scoring.
 
         Args:
@@ -793,7 +790,7 @@ class ICLContextManager:
                 return cached_context
 
         # Select best examples using similarity scoring
-        selected_examples = self._select_best_examples(template["examples"], text, language)
+        selected_examples = self._select_best_examples(list(template["examples"]), text, language)
 
         # Create optimized context
         context = {
@@ -834,7 +831,7 @@ class ICLContextManager:
 
         return intersection / union if union > 0 else 0.0
 
-    def _select_best_examples(self, examples: List[str], target_text: str, language: str) -> List[str]:
+    def _select_best_examples(self, examples: list[str], target_text: str, language: str) -> list[str]:
         """Select the most relevant examples based on similarity to target text.
 
         Args:
@@ -858,7 +855,7 @@ class ICLContextManager:
         scored_examples.sort(key=lambda x: x[0], reverse=True)
         return [example for _, example in scored_examples[:2]]
 
-    def _update_cache(self, cache_key: str, context: Dict[str, Any]) -> None:
+    def _update_cache(self, cache_key: str, context: dict[str, Any]) -> None:
         """Update cache with LRU eviction and quality scoring.
 
         Args:
@@ -882,7 +879,7 @@ class ICLContextManager:
         self._cache[cache_key] = context
         self._context_scores[cache_key] = context.get("similarity_score", 0.0)
 
-    def get_generic_context(self, text: str) -> Dict[str, Any]:
+    def get_generic_context(self, text: str) -> dict[str, Any]:
         """Get generic ICL context for any text.
 
         Args:
@@ -906,7 +903,7 @@ class BGEInICLProvider:
         self,
         base_url: str,
         model: str = "bge-in-icl",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         batch_size: int = 50,
         timeout: int = 120,
         language: str = "auto",
@@ -941,21 +938,25 @@ class BGEInICLProvider:
         self._adaptive_batching = adaptive_batching
         self._min_batch_size = min_batch_size
 
-        # UNIFIED BATCHING SYSTEM: Respect user-configured batch_size as maximum
-        # If user specified a batch_size, use it as the max_batch_size to ensure
-        # adaptive batching never exceeds the user's intended limit
-        self._max_batch_size = min(max_batch_size, batch_size)
+        # UNIFIED BATCHING SYSTEM: For adaptive batching, allow growth up to max_batch_size
+        # For non-adaptive batching, respect user-configured batch_size as maximum
+        if adaptive_batching:
+            self._max_batch_size = max_batch_size
+        else:
+            # If user specified a batch_size, use it as the max_batch_size to ensure
+            # non-adaptive batching never exceeds the user's intended limit
+            self._max_batch_size = min(max_batch_size, batch_size)
 
         # Initialize context manager with similarity scoring
         self._context_manager = ICLContextManager(cache_size=context_cache_size)
 
         # Performance monitoring
         self._metrics = PerformanceMetrics()
-        self._performance_window: List[float] = []  # Recent response times for adaptive batching
+        self._performance_window: list[float] = []  # Recent response times for adaptive batching
         self._window_size = 10  # Number of recent requests to consider
 
         # Will be auto-detected on first use
-        self._dims: Optional[int] = None
+        self._dims: int | None = None
         self._distance = "cosine"  # BGE models typically use cosine similarity
 
         logger.info(f"BGE-IN-ICL provider initialized: {self._model} (base_url: {self._base_url}, "
@@ -990,7 +991,7 @@ class BGEInICLProvider:
     def batch_size(self) -> int:
         return self._batch_size
 
-    def get_performance_metrics(self) -> Dict[str, Any]:
+    def get_performance_metrics(self) -> dict[str, Any]:
         """Get current performance metrics.
 
         Returns:
@@ -1082,7 +1083,7 @@ class BGEInICLProvider:
         else:
             return "generic"
 
-    def _prepare_icl_request(self, texts: List[str]) -> Dict[str, Any]:
+    def _prepare_icl_request(self, texts: list[str]) -> dict[str, Any]:
         """Prepare request payload with optimized in-context learning data.
 
         Args:
@@ -1133,7 +1134,7 @@ class BGEInICLProvider:
             }
         }
 
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using BGE-IN-ICL with advanced optimization features.
 
         Args:
@@ -1153,7 +1154,7 @@ class BGEInICLProvider:
                     f"(ICL: {self._enable_icl}, adaptive_batching: {self._adaptive_batching})")
 
         try:
-            all_embeddings: List[List[float]] = []
+            all_embeddings: list[list[float]] = []
 
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self._timeout)) as session:
                 batch_count = 0
@@ -1241,15 +1242,15 @@ class BGEInICLProvider:
 def create_bge_in_icl_provider(
     base_url: str,
     model: str = "bge-in-icl",
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     language: str = "auto",
     enable_icl: bool = True,
     adaptive_batching: bool = True,
     min_batch_size: int = 10,
     max_batch_size: int = 100,
-    batch_size: Optional[int] = None,
+    batch_size: int | None = None,
     context_cache_size: int = 100,
-    **kwargs
+    **kwargs: Any
 ) -> BGEInICLProvider:
     """Create a BGE-IN-ICL embedding provider with advanced in-context learning features.
 

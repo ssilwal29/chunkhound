@@ -19,7 +19,7 @@ async def handle_token_limit_error(
     single_text_fallback: bool = True
 ) -> list[list[float]]:
     """Generic handler for token limit exceeded errors.
-    
+
     Args:
         texts: List of texts that exceeded token limit
         total_tokens: Total estimated tokens in the batch
@@ -27,10 +27,10 @@ async def handle_token_limit_error(
         embed_function: Function to embed a batch of texts
         chunk_text_function: Function to chunk a single text by tokens
         single_text_fallback: Whether to use first chunk as fallback for oversized text
-        
+
     Returns:
         List of embeddings for all texts
-        
+
     Raises:
         ValidationError: If single text can't be chunked further
     """
@@ -89,11 +89,11 @@ async def handle_token_limit_error(
 
 def calculate_optimal_batch_splits(total_tokens: int, token_limit: int) -> int:
     """Calculate optimal number of batch splits for token limit.
-    
+
     Args:
         total_tokens: Total estimated tokens
         token_limit: Maximum tokens per batch
-        
+
     Returns:
         Number of splits needed (minimum 2)
     """
@@ -102,11 +102,11 @@ def calculate_optimal_batch_splits(total_tokens: int, token_limit: int) -> int:
 
 def split_texts_evenly(texts: list[str], num_splits: int) -> list[list[str]]:
     """Split texts into evenly-sized chunks.
-    
+
     Args:
         texts: List of texts to split
         num_splits: Number of chunks to create
-        
+
     Returns:
         List of text chunks
     """
@@ -155,12 +155,12 @@ def with_token_limit_handling(
     single_text_fallback: bool = True
 ):
     """Decorator to add token limit error handling to embedding methods.
-    
+
     Args:
         error_check_func: Function to check if exception indicates token limit exceeded
         safety_margin: Safety margin to subtract from token limit
         single_text_fallback: Whether to use first chunk as fallback for oversized single text
-        
+
     Returns:
         Decorator function
     """

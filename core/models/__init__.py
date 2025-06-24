@@ -12,13 +12,13 @@ The models follow these principles:
 - Backward compatibility with existing dictionary-based interfaces
 """
 
-from .file import File
 from .chunk import Chunk
 from .embedding import Embedding, EmbeddingResult
+from .file import File
 
 __all__ = [
     "File",
-    "Chunk", 
+    "Chunk",
     "Embedding",
     "EmbeddingResult",
 ]

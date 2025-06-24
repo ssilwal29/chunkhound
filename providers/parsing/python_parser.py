@@ -1,17 +1,20 @@
 """Python language parser provider implementation for ChunkHound - concrete parser using tree-sitter."""
 
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
 import time
+from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
-from core.types import ChunkType, Language as CoreLanguage
+from core.types import ChunkType
+from core.types import Language as CoreLanguage
 from interfaces.language_parser import ParseConfig, ParseResult
 
 try:
     import tree_sitter_python as tspython
-    from tree_sitter import Language as TSLanguage, Parser as TSParser, Node as TSNode
+    from tree_sitter import Language as TSLanguage
+    from tree_sitter import Node as TSNode
+    from tree_sitter import Parser as TSParser
     TREE_SITTER_AVAILABLE = True
 except ImportError:
     TREE_SITTER_AVAILABLE = False
@@ -24,7 +27,7 @@ except ImportError:
 class PythonParser:
     """Python language parser using tree-sitter."""
 
-    def __init__(self, config: Optional[ParseConfig] = None):
+    def __init__(self, config: ParseConfig | None = None):
         """Initialize Python parser.
 
         Args:
@@ -89,7 +92,7 @@ class PythonParser:
         return CoreLanguage.PYTHON
 
     @property
-    def supported_chunk_types(self) -> Set[ChunkType]:
+    def supported_chunk_types(self) -> set[ChunkType]:
         """Chunk types this parser can extract."""
         return self._config.chunk_types
 
@@ -98,7 +101,7 @@ class PythonParser:
         """Whether the parser is available and ready to use."""
         return TREE_SITTER_AVAILABLE and self._initialized
 
-    def parse_file(self, file_path: Path, source: Optional[str] = None) -> ParseResult:
+    def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
         """Parse a Python file and extract semantic chunks.
 
         Args:
@@ -128,7 +131,7 @@ class PythonParser:
         try:
             # Read source if not provided
             if source is None:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, encoding='utf-8') as f:
                     source = f.read()
 
             # Parse with tree-sitter
@@ -179,7 +182,7 @@ class PythonParser:
         """Extract text content from a tree-sitter node."""
         return source[node.start_byte:node.end_byte]
 
-    def _extract_functions(self, tree_node: TSNode, source: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _extract_functions(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
         """Extract Python function definitions from AST."""
         chunks = []
 
@@ -204,7 +207,7 @@ class PythonParser:
                 function_node = captures["function_def"][0]
                 function_name_node = captures["function_name"][0]
                 function_name = self._get_node_text(function_name_node, source).strip()
-                
+
                 # Fallback for empty function names
                 if not function_name:
                     function_name = f"function_{function_node.start_point[0] + 1}"
@@ -240,7 +243,7 @@ class PythonParser:
 
         return chunks
 
-    def _extract_classes(self, tree_node: TSNode, source: str, file_path: Path) -> List[Dict[str, Any]]:
+    def _extract_classes(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
         """Extract Python class definitions from AST."""
         chunks = []
 
@@ -265,7 +268,7 @@ class PythonParser:
                 class_node = captures["class_def"][0]
                 class_name_node = captures["class_name"][0]
                 class_name = self._get_node_text(class_name_node, source).strip()
-                
+
                 # Fallback for empty class names
                 if not class_name:
                     class_name = f"class_{class_node.start_point[0] + 1}"
@@ -300,7 +303,7 @@ class PythonParser:
         return chunks
 
     def _extract_class_methods(self, class_node: TSNode, source: str,
-                              file_path: Path, class_name: str) -> List[Dict[str, Any]]:
+                              file_path: Path, class_name: str) -> list[dict[str, Any]]:
         """Extract methods from a Python class."""
         chunks = []
 
@@ -337,7 +340,7 @@ class PythonParser:
                 method_node = captures["method_def"][0]
                 method_name_node = captures["method_name"][0]
                 method_name = self._get_node_text(method_name_node, source).strip()
-                
+
                 # Fallback for empty method names
                 if not method_name:
                     method_name = f"method_{method_node.start_point[0] + 1}"
@@ -375,7 +378,7 @@ class PythonParser:
 
         return chunks
 
-    def _extract_function_parameters(self, function_node: TSNode, source: str) -> List[str]:
+    def _extract_function_parameters(self, function_node: TSNode, source: str) -> list[str]:
         """Extract parameter names from a Python function."""
         parameters = []
 
@@ -414,7 +417,7 @@ class PythonParser:
 
         return parameters
 
-    def _create_fallback_block_chunk(self, source: str, file_path: Path) -> Dict[str, Any]:
+    def _create_fallback_block_chunk(self, source: str, file_path: Path) -> dict[str, Any]:
         """Create a fallback BLOCK chunk for files with no structured content.
 
         Args:

@@ -6,6 +6,6 @@ from .language_parser import LanguageParser
 
 __all__ = [
     "DatabaseProvider",
-    "EmbeddingProvider", 
+    "EmbeddingProvider",
     "LanguageParser",
 ]

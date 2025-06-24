@@ -12,31 +12,31 @@ The types are organized into logical groups:
 """
 
 from .common import (
-    ChunkType,
-    Language,
-    ProviderName,
-    ModelName,
-    FilePath,
-    ChunkId,
-    FileId,
-    EmbeddingVector,
-    LineNumber,
     ByteOffset,
-    Timestamp,
+    ChunkId,
+    ChunkType,
+    Dimensions,
     Distance,
-    Dimensions
+    EmbeddingVector,
+    FileId,
+    FilePath,
+    Language,
+    LineNumber,
+    ModelName,
+    ProviderName,
+    Timestamp,
 )
 
 __all__ = [
     # Enums
     "ChunkType",
     "Language",
-    
+
     # String types
     "ProviderName",
     "ModelName",
     "FilePath",
-    
+
     # Numeric types
     "ChunkId",
     "FileId",
@@ -45,7 +45,7 @@ __all__ = [
     "Timestamp",
     "Distance",
     "Dimensions",
-    
+
     # Complex types
     "EmbeddingVector",
 ]

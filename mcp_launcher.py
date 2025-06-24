@@ -8,9 +8,9 @@ from the CLI commands that need to start an MCP server with clean JSON-RPC
 communication (no logging or other output that would interfere with the protocol).
 """
 
+import argparse
 import os
 import sys
-import argparse
 from pathlib import Path
 
 
@@ -103,7 +103,7 @@ def main():
         main_sync()
     except ImportError:
         sys.exit(1)
-    except Exception as e:
+    except Exception:
         sys.exit(1)
 
 

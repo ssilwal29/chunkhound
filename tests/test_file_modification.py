@@ -129,89 +129,139 @@ def search_for_content(search_term, search_type="regex"):
         return "", 2
 
 
-def test_file_creation_detection():
-    """Test that newly created files are detected and indexed via watch mode."""
-    print("\n=== Testing file creation detection with watch mode ===")
+class TestFileModification:
+    """Test class for file modification detection."""
     
-    # Start watch mode in background
-    print("Starting watch mode...")
-    import subprocess
-    import os
-    watch_process = subprocess.Popen(
-        f"{CHUNKHOUND_CMD} run {TEST_DIR} --include='*.py' --watch".split(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env={**os.environ, "CHUNKHOUND_DB_PATH": "chunkhound.db"}
-    )
+    def setup_method(self):
+        """Set up test environment before each test."""
+        # Create test directory
+        TEST_DIR.mkdir(exist_ok=True, parents=True)
+        print(f"Created test directory: {TEST_DIR}")
+        
+        # Create a dummy file to ensure the directory is not empty
+        self.dummy_file = TEST_DIR / "dummy.py"
+        self.dummy_file.write_text("# Dummy file for testing\ndef dummy(): pass\n")
+        print(f"Created dummy file: {self.dummy_file}")
+        
+        # Initialize database by doing a quick index (no watch mode)
+        print("Initializing database with dummy file...")
+        result = run_command(f"{CHUNKHOUND_CMD} run {TEST_DIR} --include='*.py'", silent=True)
+        if result.returncode != 0:
+            print(f"Warning: Initial indexing had issues but continuing with test...")
+            print(f"STDERR: {result.stderr}")
+        else:
+            print("Database initialized successfully")
+        
+        # Wait for initial indexing to complete
+        time.sleep(2)
     
-    # Give watch mode time to start
-    time.sleep(3)
-    
-    try:
-        # Create test file with unique marker
-        file_content = f"""
+    def teardown_method(self):
+        """Clean up test environment after each test."""
+        try:
+            # Remove test directory
+            if TEST_DIR.exists():
+                for file in TEST_DIR.glob("*"):
+                    if file.is_file():
+                        file.unlink()
+                TEST_DIR.rmdir()
+                print(f"Removed test directory: {TEST_DIR}")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+
+    def test_file_creation_detection(self):
+        """Test that newly created files are detected and indexed via watch mode."""
+        print("\n=== Testing file creation detection with watch mode ===")
+        
+        # Start watch mode in background
+        print("Starting watch mode...")
+        import subprocess
+        import os
+        watch_process = subprocess.Popen(
+            f"{CHUNKHOUND_CMD} run {TEST_DIR} --include='*.py' --watch".split(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "CHUNKHOUND_DB_PATH": "chunkhound.db"}
+        )
+        
+        # Give watch mode time to start
+        time.sleep(3)
+        
+        try:
+            # Create test file with unique marker
+            file_content = f"""
 # {UNIQUE_MARKER}_CREATION
 def test_function_creation():
     \"\"\"This is a test function for file creation detection.\"\"\"
     print("{UNIQUE_MARKER}_CREATION")
     return True
 """
-        test_file = create_test_file(f"creation_test_{UNIQUE_MARKER}.py", file_content)
+            test_file = create_test_file(f"creation_test_{UNIQUE_MARKER}.py", file_content)
+            
+            # Wait for file watcher to detect and process the new file
+            print(f"Waiting {WAIT_TIME * 2} seconds for watch mode to detect new file...")
+            time.sleep(WAIT_TIME * 2)
+            
+        finally:
+            # Stop watch mode
+            print("Stopping watch mode...")
+            watch_process.terminate()
+            try:
+                watch_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                watch_process.kill()
+                watch_process.wait()
         
-        # Wait for file watcher to detect and process the new file
-        print(f"Waiting {WAIT_TIME * 2} seconds for watch mode to detect new file...")
-        time.sleep(WAIT_TIME * 2)
+        # Now search for the content using database query
+        print("Querying database for indexed content...")
+        stdout, returncode = search_for_content(f"{UNIQUE_MARKER}_CREATION")
         
-    finally:
-        # Stop watch mode
-        print("Stopping watch mode...")
-        watch_process.terminate()
+        if f"{UNIQUE_MARKER}_CREATION" in stdout:
+            print("✅ File creation detection SUCCESS")
+            # Store the test file for subsequent tests
+            self.test_file = test_file
+            assert True
+        else:
+            print("❌ File creation detection FAILED")
+            print("Search results did not contain the unique marker")
+            print(f"Looking for: {UNIQUE_MARKER}_CREATION")
+            print(f"Search output: {stdout}")
+            assert False, f"File creation was not detected. Expected '{UNIQUE_MARKER}_CREATION' in search results"
+
+    def test_file_modification_detection(self):
+        """Test that file modifications are detected and indexed via watch mode."""
+        print("\n=== Testing file modification detection with watch mode ===")
+        
+        # First create a test file
+        file_content = f"""
+# {UNIQUE_MARKER}_ORIGINAL
+def test_function_original():
+    \"\"\"This is the original test function.\"\"\"
+    print("{UNIQUE_MARKER}_ORIGINAL")
+    return True
+"""
+        test_file = create_test_file(f"modification_test_{UNIQUE_MARKER}.py", file_content)
+        
+        if test_file is None or not test_file.exists():
+            print("❌ Cannot test modification: test file does not exist")
+            assert False, "Test file could not be created"
+        
+        # Start watch mode in background  
+        print("Starting watch mode...")
+        import subprocess
+        import os
+        watch_process = subprocess.Popen(
+            f"{CHUNKHOUND_CMD} run {TEST_DIR} --include='*.py' --watch".split(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "CHUNKHOUND_DB_PATH": "chunkhound.db"}
+        )
+        
+        # Give watch mode time to start
+        time.sleep(3)
+        
         try:
-            watch_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            watch_process.kill()
-            watch_process.wait()
-    
-    # Now search for the content using database query
-    print("Querying database for indexed content...")
-    stdout, returncode = search_for_content(f"{UNIQUE_MARKER}_CREATION")
-    
-    if f"{UNIQUE_MARKER}_CREATION" in stdout:
-        print("✅ File creation detection SUCCESS")
-        return test_file
-    else:
-        print("❌ File creation detection FAILED")
-        print("Search results did not contain the unique marker")
-        print(f"Looking for: {UNIQUE_MARKER}_CREATION")
-        print(f"Search output: {stdout}")
-        return None
-
-
-def test_file_modification_detection(test_file):
-    """Test that file modifications are detected and indexed via watch mode."""
-    print("\n=== Testing file modification detection with watch mode ===")
-    
-    if test_file is None or not test_file.exists():
-        print("❌ Cannot test modification: test file does not exist")
-        return False
-    
-    # Start watch mode in background  
-    print("Starting watch mode...")
-    import subprocess
-    import os
-    watch_process = subprocess.Popen(
-        f"{CHUNKHOUND_CMD} run {TEST_DIR} --include='*.py' --watch".split(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env={**os.environ, "CHUNKHOUND_DB_PATH": "chunkhound.db"}
-    )
-    
-    # Give watch mode time to start
-    time.sleep(3)
-    
-    try:
-        # Modify test file with new unique marker
-        modified_content = f"""
+            # Modify test file with new unique marker
+            modified_content = f"""
 # {UNIQUE_MARKER}_MODIFIED
 def test_function_modified():
     \"\"\"This is a modified test function for file modification detection.\"\"\"
@@ -228,96 +278,107 @@ class TestClass_{UNIQUE_MARKER}:
         \"\"\"Second test method\"\"\"
         return "{UNIQUE_MARKER}_METHOD2"
 """
-        modify_test_file(test_file, modified_content)
+            modify_test_file(test_file, modified_content)
+            
+            # Wait for file watcher to detect and process the modification
+            print(f"Waiting {WAIT_TIME * 2} seconds for watch mode to detect file modification...")
+            time.sleep(WAIT_TIME * 2)
+            
+        finally:
+            # Stop watch mode
+            print("Stopping watch mode...")
+            watch_process.terminate()
+            try:
+                watch_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                watch_process.kill()
+                watch_process.wait()
         
-        # Wait for file watcher to detect and process the modification
-        print(f"Waiting {WAIT_TIME * 2} seconds for watch mode to detect file modification...")
-        time.sleep(WAIT_TIME * 2)
+        # Now search for the content
+        print("Querying database for modified content...")
+        stdout, returncode = search_for_content(f"{UNIQUE_MARKER}_MODIFIED")
+        stdout2, returncode2 = search_for_content(f"{UNIQUE_MARKER}_METHOD2")
         
-    finally:
-        # Stop watch mode
-        print("Stopping watch mode...")
-        watch_process.terminate()
-        try:
-            watch_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            watch_process.kill()
-            watch_process.wait()
-    
-    # Now search for the content
-    print("Querying database for modified content...")
-    stdout, returncode = search_for_content(f"{UNIQUE_MARKER}_MODIFIED")
-    stdout2, returncode2 = search_for_content(f"{UNIQUE_MARKER}_METHOD2")
-    
-    if f"{UNIQUE_MARKER}_MODIFIED" in stdout and f"{UNIQUE_MARKER}_METHOD2" in stdout2:
-        print("✅ File modification detection SUCCESS")
-        return True
-    else:
-        print("❌ File modification detection FAILED")
-        if f"{UNIQUE_MARKER}_MODIFIED" not in stdout:
-            print("Search results did not contain the modified marker")
-            print(f"Modified search output: {stdout}")
-        if f"{UNIQUE_MARKER}_METHOD2" not in stdout2:
-            print("Search results did not contain the method2 marker") 
-            print(f"Method2 search output: {stdout2}")
-        return False
+        if f"{UNIQUE_MARKER}_MODIFIED" in stdout and f"{UNIQUE_MARKER}_METHOD2" in stdout2:
+            print("✅ File modification detection SUCCESS")
+            # Store the test file for deletion test
+            self.test_file = test_file
+            assert True
+        else:
+            print("❌ File modification detection FAILED")
+            if f"{UNIQUE_MARKER}_MODIFIED" not in stdout:
+                print("Search results did not contain the modified marker")
+                print(f"Modified search output: {stdout}")
+            if f"{UNIQUE_MARKER}_METHOD2" not in stdout2:
+                print("Search results did not contain the method2 marker") 
+                print(f"Method2 search output: {stdout2}")
+            assert False, f"File modification was not detected. Expected '{UNIQUE_MARKER}_MODIFIED' and '{UNIQUE_MARKER}_METHOD2' in search results"
 
-
-def test_file_deletion_detection(test_file):
-    """Test that file deletions are detected and removed from index via watch mode."""
-    print("\n=== Testing file deletion detection with watch mode ===")
-    
-    if test_file is None or not test_file.exists():
-        print("❌ Cannot test deletion: test file does not exist")
-        return False
-    
-    # Remember the unique marker before deleting
-    unique_marker = UNIQUE_MARKER
-    
-    # Start watch mode in background
-    print("Starting watch mode...")
-    import subprocess
-    import os
-    watch_process = subprocess.Popen(
-        f"{CHUNKHOUND_CMD} run {TEST_DIR} --include='*.py' --watch".split(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env={**os.environ, "CHUNKHOUND_DB_PATH": "chunkhound.db"}
-    )
-    
-    # Give watch mode time to start
-    time.sleep(3)
-    
-    try:
-        # Delete the test file
-        delete_test_file(test_file)
+    def test_file_deletion_detection(self):
+        """Test that file deletions are detected and removed from index via watch mode."""
+        print("\n=== Testing file deletion detection with watch mode ===")
         
-        # Wait for file watcher to detect and process the deletion
-        print(f"Waiting {WAIT_TIME * 2} seconds for watch mode to detect file deletion...")
-        time.sleep(WAIT_TIME * 2)
+        # First create and modify a test file
+        file_content = f"""
+# {UNIQUE_MARKER}_DELETION
+def test_function_deletion():
+    \"\"\"This is a test function that will be deleted.\"\"\"
+    print("{UNIQUE_MARKER}_DELETION")
+    return True
+"""
+        test_file = create_test_file(f"deletion_test_{UNIQUE_MARKER}.py", file_content)
         
-    finally:
-        # Stop watch mode
-        print("Stopping watch mode...")
-        watch_process.terminate()
+        if test_file is None or not test_file.exists():
+            print("❌ Cannot test deletion: test file does not exist")
+            assert False, "Test file could not be created"
+        
+        # Remember the unique marker before deleting
+        unique_marker = UNIQUE_MARKER
+        
+        # Start watch mode in background
+        print("Starting watch mode...")
+        import subprocess
+        import os
+        watch_process = subprocess.Popen(
+            f"{CHUNKHOUND_CMD} run {TEST_DIR} --include='*.py' --watch".split(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "CHUNKHOUND_DB_PATH": "chunkhound.db"}
+        )
+        
+        # Give watch mode time to start
+        time.sleep(3)
+        
         try:
-            watch_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            watch_process.kill()
-            watch_process.wait()
-    
-    # Now search for the content (should not find it)
-    print("Querying database to verify content was removed...")
-    stdout, returncode = search_for_content(f"{unique_marker}_MODIFIED")
-    
-    if f"{unique_marker}_MODIFIED" not in stdout:
-        print("✅ File deletion detection SUCCESS")
-        return True
-    else:
-        print("❌ File deletion detection FAILED")
-        print("Search results still contain content from deleted file")
-        print(f"Deletion search output: {stdout}")
-        return False
+            # Delete the test file
+            delete_test_file(test_file)
+            
+            # Wait for file watcher to detect and process the deletion
+            print(f"Waiting {WAIT_TIME * 2} seconds for watch mode to detect file deletion...")
+            time.sleep(WAIT_TIME * 2)
+            
+        finally:
+            # Stop watch mode
+            print("Stopping watch mode...")
+            watch_process.terminate()
+            try:
+                watch_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                watch_process.kill()
+                watch_process.wait()
+        
+        # Now search for the content (should not find it)
+        print("Querying database to verify content was removed...")
+        stdout, returncode = search_for_content(f"{unique_marker}_DELETION")
+        
+        if f"{unique_marker}_DELETION" not in stdout:
+            print("✅ File deletion detection SUCCESS")
+            assert True
+        else:
+            print("❌ File deletion detection FAILED")
+            print("Search results still contain content from deleted file")
+            print(f"Deletion search output: {stdout}")
+            assert False, f"File deletion was not detected. Content from deleted file still found in search results"
 
 
 def setup():

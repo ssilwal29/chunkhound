@@ -1,16 +1,18 @@
 """Indexing coordinator service for ChunkHound - orchestrates file indexing workflows."""
 
-from typing import Any, Dict, List, Optional, Tuple, Union
-from pathlib import Path
 from fnmatch import fnmatch
+from pathlib import Path
+from typing import Any
+
 from loguru import logger
 from tqdm import tqdm
 
 from core.models import File
-from core.types import Language, FilePath, FileId
+from core.types import FileId, FilePath, Language
 from interfaces.database_provider import DatabaseProvider
 from interfaces.embedding_provider import EmbeddingProvider
 from interfaces.language_parser import LanguageParser, ParseResult
+
 from .base_service import BaseService
 
 
@@ -20,8 +22,8 @@ class IndexingCoordinator(BaseService):
     def __init__(
         self,
         database_provider: DatabaseProvider,
-        embedding_provider: Optional[EmbeddingProvider] = None,
-        language_parsers: Optional[Dict[Language, LanguageParser]] = None
+        embedding_provider: EmbeddingProvider | None = None,
+        language_parsers: dict[Language, LanguageParser] | None = None
     ):
         """Initialize indexing coordinator.
 
@@ -35,7 +37,7 @@ class IndexingCoordinator(BaseService):
         self._language_parsers = language_parsers or {}
 
         # Performance optimization: shared instances
-        self._parser_cache: Dict[Language, LanguageParser] = {}
+        self._parser_cache: dict[Language, LanguageParser] = {}
 
     def add_language_parser(self, language: Language, parser: LanguageParser) -> None:
         """Add or update a language parser.
@@ -49,7 +51,7 @@ class IndexingCoordinator(BaseService):
         if language in self._parser_cache:
             del self._parser_cache[language]
 
-    def get_parser_for_language(self, language: Language) -> Optional[LanguageParser]:
+    def get_parser_for_language(self, language: Language) -> LanguageParser | None:
         """Get parser for specified language with caching.
 
         Args:
@@ -70,7 +72,7 @@ class IndexingCoordinator(BaseService):
 
         return self._parser_cache[language]
 
-    def detect_file_language(self, file_path: Path) -> Optional[Language]:
+    def detect_file_language(self, file_path: Path) -> Language | None:
         """Detect programming language from file extension.
 
         Args:
@@ -99,7 +101,7 @@ class IndexingCoordinator(BaseService):
 
         return language_map.get(suffix)
 
-    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> Dict[str, Any]:
+    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> dict[str, Any]:
         """Process a single file through the complete indexing pipeline.
 
         Args:
@@ -131,7 +133,7 @@ class IndexingCoordinator(BaseService):
             logger.debug(f"Processing file: {file_path}")
             logger.debug(f"File stat: mtime={file_stat.st_mtime}, size={file_stat.st_size}")
 
-            # Note: Removed timestamp checking logic - if IndexingCoordinator.process_file() 
+            # Note: Removed timestamp checking logic - if IndexingCoordinator.process_file()
             # was called, the file needs processing. File watcher handles change detection.
 
             # Parse file content - can return ParseResult or List[Dict[str, Any]]
@@ -140,12 +142,12 @@ class IndexingCoordinator(BaseService):
                 return {"status": "no_content", "chunks": 0}
 
             # Extract chunks from ParseResult object or direct list
-            raw_chunks: List[Dict[str, Any]]
+            raw_chunks: list[dict[str, Any]]
             if isinstance(parsed_data, ParseResult):
                 # New parser providers return ParseResult object
                 raw_chunks = parsed_data.chunks
             elif isinstance(parsed_data, list):
-                # Legacy parsers return chunks directly  
+                # Legacy parsers return chunks directly
                 raw_chunks = parsed_data
             else:
                 # Fallback for unexpected types
@@ -153,20 +155,20 @@ class IndexingCoordinator(BaseService):
 
             # Filter empty chunks early to reduce storage warnings
             chunks = self._filter_valid_chunks(raw_chunks)
-            
+
             if not chunks:
                 return {"status": "no_chunks", "chunks": 0}
 
             # Check if this is an existing file that has been modified BEFORE storing the record
             existing_file = self._db.get_file_by_path(str(file_path))
             is_file_modified = False
-            
+
             if existing_file:
                 # Check if file was actually modified (different mtime)
                 # Use same field resolution logic as process_file_incremental
                 existing_mtime = 0
                 current_mtime = file_stat.st_mtime
-                
+
                 if isinstance(existing_file, dict):
                     # Try different possible timestamp field names
                     for field in ['mtime', 'modified_time', 'modification_time', 'timestamp']:
@@ -182,9 +184,21 @@ class IndexingCoordinator(BaseService):
                     # Handle File model objects
                     if hasattr(existing_file, 'mtime'):
                         existing_mtime = float(existing_file.mtime)
-                
+
                 is_file_modified = abs(current_mtime - existing_mtime) > 0.001  # Allow small float precision differences
                 logger.debug(f"File modification check: {file_path} - existing_mtime: {existing_mtime}, current_mtime: {current_mtime}, modified: {is_file_modified}")
+
+                # If file hasn't been modified, return up_to_date status
+                if not is_file_modified:
+                    # Get existing chunk count for consistency
+                    file_id = existing_file.get('id') if isinstance(existing_file, dict) else existing_file.id
+                    existing_chunks = self._db.get_chunks_by_file_id(file_id)
+                    return {
+                        "status": "up_to_date",
+                        "file_id": file_id,
+                        "chunks": len(existing_chunks) if existing_chunks else 0,
+                        "embeddings": 0  # No new embeddings generated
+                    }
 
             # Store or update file record
             file_id = self._store_file_record(file_path, file_stat, language)
@@ -226,10 +240,10 @@ class IndexingCoordinator(BaseService):
         file_id: int,
         file_path: Path,
         file_stat,
-        chunks: List[Dict[str, Any]],
+        chunks: list[dict[str, Any]],
         language: Language,
         skip_embeddings: bool
-    ) -> Tuple[List[int], int]:
+    ) -> tuple[list[int], int]:
         """Process file modification with transaction safety to prevent data loss.
 
         This method ensures that old content is preserved if new content processing fails.
@@ -265,7 +279,7 @@ class IndexingCoordinator(BaseService):
         try:
             # Start transaction
             connection.execute("BEGIN TRANSACTION")
-            logger.debug(f"Transaction-safe processing - Transaction started")
+            logger.debug("Transaction-safe processing - Transaction started")
 
             # Get count of existing chunks for reporting
             existing_chunks_count = connection.execute(
@@ -294,7 +308,7 @@ class IndexingCoordinator(BaseService):
 
             # Remove old content (but backup preserved in transaction)
             self._db.delete_file_chunks(file_id)
-            logger.debug(f"Transaction-safe processing - Removed old content")
+            logger.debug("Transaction-safe processing - Removed old content")
 
             # Store new chunks
             chunk_ids = self._store_chunks(file_id, chunks, language)
@@ -310,13 +324,13 @@ class IndexingCoordinator(BaseService):
 
             # Commit transaction
             connection.execute("COMMIT")
-            logger.debug(f"Transaction-safe processing - Transaction committed successfully")
+            logger.debug("Transaction-safe processing - Transaction committed successfully")
 
             # Cleanup backup tables
             try:
                 connection.execute(f"DROP TABLE {chunks_backup_table}")
                 connection.execute(f"DROP TABLE {embeddings_backup_table}")
-                logger.debug(f"Transaction-safe processing - Backup tables cleaned up")
+                logger.debug("Transaction-safe processing - Backup tables cleaned up")
             except Exception as cleanup_error:
                 logger.warning(f"Failed to cleanup backup tables: {cleanup_error}")
 
@@ -328,7 +342,7 @@ class IndexingCoordinator(BaseService):
             try:
                 # Rollback transaction
                 connection.execute("ROLLBACK")
-                logger.debug(f"Transaction-safe processing - Transaction rolled back")
+                logger.debug("Transaction-safe processing - Transaction rolled back")
 
                 # Restore from backup tables if they exist
                 try:
@@ -349,7 +363,7 @@ class IndexingCoordinator(BaseService):
                             INSERT INTO embeddings_1536 SELECT * FROM {embeddings_backup_table}
                         """)
 
-                        logger.info(f"Transaction-safe processing - Original content restored from backup")
+                        logger.info("Transaction-safe processing - Original content restored from backup")
 
                         # Cleanup backup tables
                         connection.execute(f"DROP TABLE {chunks_backup_table}")
@@ -367,9 +381,9 @@ class IndexingCoordinator(BaseService):
     async def process_directory(
         self,
         directory: Path,
-        patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None
+    ) -> dict[str, Any]:
         """Process all supported files in a directory with batch optimization.
 
         Args:
@@ -406,7 +420,7 @@ class IndexingCoordinator(BaseService):
                     else:
                         # Log errors but continue processing
                         logger.warning(f"Failed to process {file_path}: {result.get('error', 'unknown error')}")
-                    
+
                     pbar.update(1)
 
             # Note: Embedding generation is handled separately via generate_missing_embeddings()
@@ -422,7 +436,7 @@ class IndexingCoordinator(BaseService):
             logger.error(f"Failed to process directory {directory}: {e}")
             return {"status": "error", "error": str(e)}
 
-    def _extract_file_id(self, file_record: Union[Dict[str, Any], File]) -> Optional[int]:
+    def _extract_file_id(self, file_record: dict[str, Any] | File) -> int | None:
         """Safely extract file ID from either dict or File model."""
         if isinstance(file_record, File):
             return file_record.id
@@ -453,25 +467,25 @@ class IndexingCoordinator(BaseService):
         )
         return self._db.insert_file(file_model)
 
-    def _filter_valid_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _filter_valid_chunks(self, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter out chunks with empty content early in the process."""
         valid_chunks = []
         filtered_count = 0
-        
+
         for chunk in chunks:
             code_content = chunk.get("code", "")
             if code_content and code_content.strip():
                 valid_chunks.append(chunk)
             else:
                 filtered_count += 1
-        
+
         # Log summary instead of individual warnings to reduce noise
         if filtered_count > 0:
             logger.debug(f"Filtered {filtered_count} empty chunks during parsing")
-            
+
         return valid_chunks
 
-    def _store_chunks(self, file_id: int, chunks: List[Dict[str, Any]], language: Language) -> List[int]:
+    def _store_chunks(self, file_id: int, chunks: list[dict[str, Any]], language: Language) -> list[int]:
         """Store chunks in database and return chunk IDs."""
         chunk_ids = []
         for chunk in chunks:
@@ -500,7 +514,7 @@ class IndexingCoordinator(BaseService):
             chunk_ids.append(chunk_id)
         return chunk_ids
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get database statistics.
 
         Returns:
@@ -540,7 +554,7 @@ class IndexingCoordinator(BaseService):
             logger.error(f"Failed to remove file {file_path}: {e}")
             return 0
 
-    async def generate_missing_embeddings(self) -> Dict[str, Any]:
+    async def generate_missing_embeddings(self) -> dict[str, Any]:
         """Generate embeddings for chunks that don't have them.
 
         Returns:
@@ -564,7 +578,7 @@ class IndexingCoordinator(BaseService):
             logger.error(f"Failed to generate missing embeddings: {e}")
             return {"status": "error", "error": str(e), "generated": 0}
 
-    async def _generate_embeddings(self, chunk_ids: List[int], chunks: List[Dict[str, Any]], connection=None) -> int:
+    async def _generate_embeddings(self, chunk_ids: list[int], chunks: list[dict[str, Any]], connection=None) -> int:
         """Generate embeddings for chunks."""
         if not self._embedding_provider:
             return 0
@@ -579,15 +593,15 @@ class IndexingCoordinator(BaseService):
                     valid_chunk_data.append((chunk_id, chunk, text))
                 else:
                     empty_count += 1
-            
+
             # Log metrics for empty chunks
             if empty_count > 0:
                 logger.info(f"Filtered {empty_count} empty text chunks before embedding generation")
-            
+
             if not valid_chunk_data:
                 logger.debug("No valid chunks with text content for embedding generation")
                 return 0
-                
+
             # Extract data for embedding generation
             valid_chunk_ids = [chunk_id for chunk_id, _, _ in valid_chunk_data]
             valid_chunks = [chunk for _, chunk, _ in valid_chunk_data]
@@ -616,7 +630,7 @@ class IndexingCoordinator(BaseService):
             logger.error(f"Failed to generate embeddings: {e}")
             return 0
 
-    async def _generate_embeddings_batch(self, file_chunks: List[Tuple[int, Dict[str, Any]]]) -> int:
+    async def _generate_embeddings_batch(self, file_chunks: list[tuple[int, dict[str, Any]]]) -> int:
         """Generate embeddings for chunks in optimized batches."""
         if not self._embedding_provider or not file_chunks:
             return 0
@@ -630,9 +644,9 @@ class IndexingCoordinator(BaseService):
     def _discover_files(
         self,
         directory: Path,
-        patterns: Optional[List[str]],
-        exclude_patterns: Optional[List[str]]
-    ) -> List[Path]:
+        patterns: list[str] | None,
+        exclude_patterns: list[str] | None
+    ) -> list[Path]:
         """Discover files in directory matching patterns."""
         files = []
 

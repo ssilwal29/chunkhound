@@ -194,10 +194,10 @@ def unchanged_function():
     @pytest.mark.asyncio
     async def test_process_unsupported_file_type(self):
         """Test that unsupported file types are skipped."""
-        # Create unsupported file type
-        unsupported_file = self.test_file_path.with_suffix('.txt')
+        # Create unsupported file type (using .xyz which is truly unsupported)
+        unsupported_file = self.test_file_path.with_suffix('.xyz')
         with open(unsupported_file, 'w') as f:
-            f.write("This is a text file")
+            f.write("This is an unsupported file type")
         
         try:
             result = await self.db.process_file_incremental(unsupported_file)

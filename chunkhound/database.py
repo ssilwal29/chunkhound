@@ -11,21 +11,27 @@ This new implementation reduces the Database class to ~150 lines by delegating t
 This maintains backward compatibility while using the new modular architecture.
 """
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
 import threading
+from pathlib import Path
+from typing import Any
 
 from loguru import logger
-
-# Registry import for service layer
-from registry import get_registry, create_indexing_coordinator, create_search_service, create_embedding_service
 
 # Provider imports
 from providers.database.duckdb_provider import DuckDBProvider
 
+# Registry import for service layer
+from registry import (
+    create_embedding_service,
+    create_indexing_coordinator,
+    create_search_service,
+    get_registry,
+)
+
+from .chunker import Chunker, IncrementalChunker
+
 # Legacy imports for backward compatibility
 from .embeddings import EmbeddingManager
-from .chunker import Chunker, IncrementalChunker
 from .file_discovery_cache import FileDiscoveryCache
 
 
@@ -36,7 +42,7 @@ class Database:
     while delegating operations to the new modular service layer architecture.
     """
 
-    def __init__(self, db_path: Union[Path, str], embedding_manager: Optional[EmbeddingManager] = None):
+    def __init__(self, db_path: Path | str, embedding_manager: EmbeddingManager | None = None):
         """Initialize database connection and service layer.
 
         Args:
@@ -65,8 +71,8 @@ class Database:
         self.connection = None  # Will be set after connect()
 
         # Legacy compatibility: shared chunker instances
-        self._chunker: Optional[Chunker] = None
-        self._incremental_chunker: Optional[IncrementalChunker] = None
+        self._chunker: Chunker | None = None
+        self._incremental_chunker: IncrementalChunker | None = None
         self._file_discovery_cache = FileDiscoveryCache()
 
     def connect(self) -> None:
@@ -104,14 +110,14 @@ class Database:
     # File Processing Methods - Delegate to IndexingCoordinator
     # =============================================================================
 
-    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> Dict[str, Any]:
+    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> dict[str, Any]:
         """Process a file end-to-end: parse, chunk, and store in database.
 
         Delegates to IndexingCoordinator for actual processing.
         """
         return await self._indexing_coordinator.process_file(file_path, skip_embeddings)
 
-    async def process_file_incremental(self, file_path: Path) -> Dict[str, Any]:
+    async def process_file_incremental(self, file_path: Path) -> dict[str, Any]:
         """Process a file with incremental parsing and differential chunking.
 
         Note: True incremental processing not yet implemented in service layer.
@@ -119,7 +125,7 @@ class Database:
         """
         return await self._provider.process_file_incremental(file_path)
 
-    async def process_directory(self, directory: Path, patterns: Optional[List[str]] = None, exclude_patterns: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def process_directory(self, directory: Path, patterns: list[str] | None = None, exclude_patterns: list[str] | None = None) -> dict[str, Any]:
         """Process all supported files in a directory.
 
         Delegates to IndexingCoordinator for actual processing.
@@ -133,7 +139,7 @@ class Database:
     # Search Methods - Delegate to SearchService
     # =============================================================================
 
-    def search_semantic(self, query_vector: List[float], provider: str, model: str, limit: int = 10, threshold: Optional[float] = None) -> List[Dict[str, Any]]:
+    def search_semantic(self, query_vector: list[float], provider: str, model: str, limit: int = 10, threshold: float | None = None) -> list[dict[str, Any]]:
         """Perform semantic similarity search.
 
         Delegates to provider for actual search.
@@ -146,7 +152,7 @@ class Database:
             threshold=threshold
         )
 
-    def search_regex(self, pattern: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def search_regex(self, pattern: str, limit: int = 50) -> list[dict[str, Any]]:
         """Search code chunks using regex pattern.
 
         Delegates to SearchService for actual search.
@@ -157,21 +163,21 @@ class Database:
     # Database Operations - Delegate to Provider
     # =============================================================================
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get database statistics."""
         return self._provider.get_stats()
 
-    def get_file_by_path(self, file_path: str) -> Optional[Dict[str, Any]]:
+    def get_file_by_path(self, file_path: str) -> dict[str, Any] | None:
         """Get file record by path."""
         result = self._provider.get_file_by_path(file_path, as_model=False)
         return result if isinstance(result, dict) else None
 
-    def insert_file(self, file_or_path: Union[str, dict], mtime: Optional[float] = None,
-                   language: Optional[str] = None, size_bytes: Optional[int] = None) -> int:
+    def insert_file(self, file_or_path: str | dict, mtime: float | None = None,
+                   language: str | None = None, size_bytes: int | None = None) -> int:
         """Insert a new file record."""
         # Import here to avoid circular dependency
         from core.models import File
-        from core.types import Language, FilePath, Timestamp
+        from core.types import FilePath, Language, Timestamp
 
         if isinstance(file_or_path, str):
             file_model = File(
@@ -190,14 +196,14 @@ class Database:
             )
         return self._provider.insert_file(file_model)
 
-    def insert_chunk(self, chunk_or_file_id: Union[int, dict], symbol: Optional[str] = None,
-                    start_line: Optional[int] = None, end_line: Optional[int] = None,
-                    code: Optional[str] = None, chunk_type: Optional[str] = None,
-                    language_info: Optional[str] = None, parent_header: Optional[str] = None) -> int:
+    def insert_chunk(self, chunk_or_file_id: int | dict, symbol: str | None = None,
+                    start_line: int | None = None, end_line: int | None = None,
+                    code: str | None = None, chunk_type: str | None = None,
+                    language_info: str | None = None, parent_header: str | None = None) -> int:
         """Insert a new chunk record."""
         # Import here to avoid circular dependency
         from core.models import Chunk
-        from core.types import ChunkType, Language, FileId, LineNumber
+        from core.types import ChunkType, FileId, Language, LineNumber
 
         if isinstance(chunk_or_file_id, int):
             chunk_model = Chunk(
@@ -245,7 +251,7 @@ class Database:
         """
         return self._provider.delete_file_completely(file_path)
 
-    def get_chunks_by_file_id(self, file_id: int) -> List[Dict[str, Any]]:
+    def get_chunks_by_file_id(self, file_id: int) -> list[dict[str, Any]]:
         """Get chunks for a specific file."""
         results = self._provider.get_chunks_by_file_id(file_id, as_model=False)
         # Ensure we return Dict objects, not Chunk models
@@ -304,7 +310,7 @@ class Database:
     # Health Check
     # =============================================================================
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Perform health check and return status."""
         return self._provider.health_check()
 
@@ -314,10 +320,10 @@ class Database:
 
     # Legacy compatibility - expose db_path as attribute
     @property
-    def db_path(self) -> Union[Path, str]:
+    def db_path(self) -> Path | str:
         """Get database path."""
         return self._db_path
 
-    def get_file_discovery_cache_stats(self) -> Dict[str, Any]:
+    def get_file_discovery_cache_stats(self) -> dict[str, Any]:
         """Get file discovery cache statistics."""
         return self._file_discovery_cache.get_stats()

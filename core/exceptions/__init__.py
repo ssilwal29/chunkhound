@@ -13,22 +13,22 @@ The exception hierarchy is designed to:
 
 from .core import (
     ChunkHoundError,
-    ValidationError,
-    ModelError,
-    EmbeddingError,
-    ParsingError,
-    DatabaseError,
     ConfigurationError,
-    ProviderError
+    DatabaseError,
+    EmbeddingError,
+    ModelError,
+    ParsingError,
+    ProviderError,
+    ValidationError,
 )
 
 __all__ = [
     # Base exception
     "ChunkHoundError",
-    
+
     # Domain-specific exceptions
     "ValidationError",
-    "ModelError", 
+    "ModelError",
     "EmbeddingError",
     "ParsingError",
     "DatabaseError",
