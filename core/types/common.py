@@ -43,6 +43,9 @@ class ChunkType(Enum):
     PROPERTY = "property"
     FIELD = "field"
     TYPE_ALIAS = "type_alias"
+    CLOSURE = "closure"
+    TRAIT = "trait"
+    SCRIPT = "script"
 
     # Documentation types
     HEADER_1 = "header_1"
@@ -72,7 +75,8 @@ class ChunkType(Enum):
         return self in {
             self.FUNCTION, self.METHOD, self.CLASS, self.INTERFACE,
             self.STRUCT, self.ENUM, self.NAMESPACE, self.CONSTRUCTOR,
-            self.PROPERTY, self.FIELD, self.TYPE_ALIAS, self.BLOCK
+            self.PROPERTY, self.FIELD, self.TYPE_ALIAS, self.CLOSURE,
+            self.TRAIT, self.SCRIPT, self.BLOCK
         }
 
     @property
@@ -96,6 +100,7 @@ class Language(Enum):
     JAVASCRIPT = "javascript"
     TSX = "tsx"
     JSX = "jsx"
+    GROOVY = "groovy"
 
     # Documentation languages
     MARKDOWN = "markdown"
@@ -124,6 +129,9 @@ class Language(Enum):
             '.js': cls.JAVASCRIPT,
             '.tsx': cls.TSX,
             '.jsx': cls.JSX,
+            '.groovy': cls.GROOVY,
+            '.gvy': cls.GROOVY,
+            '.gy': cls.GROOVY,
             '.md': cls.MARKDOWN,
             '.markdown': cls.MARKDOWN,
             '.json': cls.JSON,
@@ -147,14 +155,14 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY
         }
 
     @property
     def supports_classes(self) -> bool:
         """Return True if this language supports class definitions."""
         return self in {
-            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX
+            self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX, self.GROOVY
         }
 
     @property

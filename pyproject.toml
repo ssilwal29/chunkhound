@@ -45,6 +45,7 @@ dependencies = [
     "PyYAML>=6.0.0",
     "tiktoken>=0.9.0",
     "tqdm>=4.66.0",
+    "tree-sitter-groovy>=0.1.2",
 ]
 
 [project.optional-dependencies]

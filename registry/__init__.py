@@ -23,6 +23,7 @@ try:
     from providers.parsing.javascript_parser import JavaScriptParser
     from providers.parsing.typescript_parser import TypeScriptParser
     from providers.parsing.csharp_parser import CSharpParser
+    from providers.parsing.groovy_parser import GroovyParser
     from providers.parsing.markdown_parser import MarkdownParser
     from providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
 
@@ -42,6 +43,7 @@ except ImportError:
     from chunkhound.providers.parsing.javascript_parser import JavaScriptParser
     from chunkhound.providers.parsing.typescript_parser import TypeScriptParser
     from chunkhound.providers.parsing.csharp_parser import CSharpParser
+    from chunkhound.providers.parsing.groovy_parser import GroovyParser
     from chunkhound.providers.parsing.markdown_parser import MarkdownParser
     from chunkhound.providers.parsing.text_parser import JsonParser, YamlParser, PlainTextParser
 
@@ -305,6 +307,13 @@ class ProviderRegistry:
                 logger.debug("Registered C# parser")
         except Exception as e:
             logger.warning(f"Failed to register C# parser: {e}")
+
+        try:
+            self.register_language_parser(Language.GROOVY, GroovyParser)
+            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                logger.debug("Registered Groovy parser")
+        except Exception as e:
+            logger.warning(f"Failed to register Groovy parser: {e}")
 
         try:
             self.register_language_parser(Language.MARKDOWN, MarkdownParser)
