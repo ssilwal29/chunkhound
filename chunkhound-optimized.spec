@@ -28,26 +28,51 @@ hiddenimports = [
     'chunkhound.core.config',
     'core.types',
     'core.types.common',
-    'chunkhound.core.types',
-    'chunkhound.core.types.common',
-    'chunkhound.registry',
+    'registry',  # Fixed: should be 'registry', not 'chunkhound.registry'
+    
+    # Refactored parser system
+    'chunkhound.parser',
+    'chunkhound.tree_cache',
 
     # Core system modules
     'core.models.chunk',
     'core.models.file',
     'core.models.embedding',
     'providers.database.duckdb_provider',
-    'providers.embedding.openai_provider',
-    'providers.parser.tree_sitter_provider',
+    'providers.embeddings.openai_provider',  # Fixed: correct path
     'services.embedding_service',
     'services.indexing_coordinator',
-    'registry',
+    
+    # All parser modules
+    'providers.parsing',
+    'providers.parsing.base_parser',
+    'providers.parsing.python_parser',
+    'providers.parsing.javascript_parser',
+    'providers.parsing.typescript_parser',
+    'providers.parsing.java_parser',
+    'providers.parsing.csharp_parser',
+    'providers.parsing.markdown_parser',
+    'providers.parsing.rust_parser',
+    'providers.parsing.go_parser',
+    'providers.parsing.c_parser',
+    'providers.parsing.cpp_parser',
+    'providers.parsing.kotlin_parser',
+    'providers.parsing.groovy_parser',
+    'providers.parsing.bash_parser',
+    'providers.parsing.toml_parser',
+    'providers.parsing.matlab_parser',
+    'providers.parsing.makefile_parser',
+    'providers.parsing.text_parser',
 
     # Essential third-party modules
     'duckdb',
     'tree_sitter',
     'tree_sitter_python',
     'tree_sitter_markdown',
+    
+    # Tree-sitter language pack for all languages
+    'tree_sitter_language_pack',
+    'tree_sitter_language_pack.bindings',
     'openai',
     'pydantic',
     'click',
