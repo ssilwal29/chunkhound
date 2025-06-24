@@ -18,9 +18,9 @@ class EmbeddingService(BaseService):
         self,
         database_provider: DatabaseProvider,
         embedding_provider: Optional[EmbeddingProvider] = None,
-        embedding_batch_size: int = 100,
-        db_batch_size: int = 500,
-        max_concurrent_batches: int = 3
+        embedding_batch_size: int = 1000,
+        db_batch_size: int = 5000,
+        max_concurrent_batches: int = 8
     ):
         """Initialize embedding service.
 
@@ -414,22 +414,62 @@ class EmbeddingService(BaseService):
         return total_generated
 
     def _create_token_aware_batches(self, chunk_data: List[Tuple[ChunkId, str]]) -> List[List[Tuple[ChunkId, str]]]:
-        """Create small batches to avoid token limits.
+        """Create batches that optimize token utilization while respecting limits.
+        
+        This method leverages the embedding provider's token-aware batching if available,
+        allowing for optimal batch sizes based on actual token counts rather than
+        fixed chunk counts.
         
         Args:
             chunk_data: List of (chunk_id, text) tuples
             
         Returns:
-            List of small batches
+            List of optimized batches
         """
-        # Use very small batch size to avoid token issues entirely
-        SAFE_BATCH_SIZE = 10  # Very conservative - 10 chunks per batch
+        if not chunk_data:
+            return []
+            
+        # Check if provider supports token-aware batching
+        if self._embedding_provider and hasattr(self._embedding_provider, 'create_token_aware_batches'):
+            # Extract texts for provider batching
+            texts = [text for _, text in chunk_data]
+            
+            try:
+                # Use provider's token-aware batching
+                text_batches = self._embedding_provider.create_token_aware_batches(texts)
+                
+                # Reconstruct batches with chunk IDs
+                batches = []
+                text_idx = 0
+                
+                for batch_texts in text_batches:
+                    batch = []
+                    for _ in batch_texts:
+                        if text_idx < len(chunk_data):
+                            batch.append(chunk_data[text_idx])
+                            text_idx += 1
+                    if batch:  # Only add non-empty batches
+                        batches.append(batch)
+                        
+                logger.debug(f"Created {len(batches)} token-aware batches from {len(chunk_data)} chunks")
+                return batches
+                
+            except Exception as e:
+                logger.warning(f"Failed to use provider's token-aware batching: {e}. Falling back to default batching.")
+        
+        # Fallback: Use configurable batch size from provider or default
+        if self._embedding_provider and hasattr(self._embedding_provider, 'batch_size'):
+            batch_size = self._embedding_provider.batch_size
+        else:
+            # Default batch size - much more reasonable than 10
+            batch_size = self._embedding_batch_size  # Uses the service's configured batch size (default: 100)
+            
         batches = []
-        
-        for i in range(0, len(chunk_data), SAFE_BATCH_SIZE):
-            batch = chunk_data[i:i + SAFE_BATCH_SIZE]
+        for i in range(0, len(chunk_data), batch_size):
+            batch = chunk_data[i:i + batch_size]
             batches.append(batch)
-        
+            
+        logger.debug(f"Created {len(batches)} fixed-size batches (size={batch_size}) from {len(chunk_data)} chunks")
         return batches
 
     def _get_chunk_ids_without_embeddings(self, provider: str, model: str) -> List[ChunkId]:
