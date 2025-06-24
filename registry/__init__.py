@@ -228,10 +228,17 @@ class ProviderRegistry:
         except ValueError:
             logger.warning("No embedding provider configured for embedding service")
 
-        # Get unified batch configuration from config
-        embedding_batch_size = self._config.get('embedding', {}).get('batch_size', 100)
-        db_batch_size = self._config.get('database', {}).get('batch_size', 500)
-        max_concurrent = self._config.get('embedding', {}).get('max_concurrent_batches', 3)
+        # Get unified batch configuration from config with environment variable override
+        # Optimized defaults based on DuckDB performance research and HNSW vector index best practices
+        embedding_batch_size = int(os.getenv('CHUNKHOUND_EMBEDDING_BATCH_SIZE', 
+                                             self._config.get('embedding', {}).get('batch_size', 1000)))
+        db_batch_size = int(os.getenv('CHUNKHOUND_DB_BATCH_SIZE',
+                                      self._config.get('database', {}).get('batch_size', 5000)))
+        max_concurrent = int(os.getenv('CHUNKHOUND_MAX_CONCURRENT_EMBEDDINGS',
+                                       self._config.get('embedding', {}).get('max_concurrent_batches', 8)))
+        
+        logger.info(f"EmbeddingService configuration: embedding_batch_size={embedding_batch_size}, "
+                   f"db_batch_size={db_batch_size}, max_concurrent={max_concurrent}")
 
         return EmbeddingService(
             database_provider=database_provider,
