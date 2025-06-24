@@ -50,6 +50,11 @@ class ChunkType(Enum):
     COMPANION_OBJECT = "companion_object"
     DATA_CLASS = "data_class"
     EXTENSION_FUNCTION = "extension_function"
+    
+    # C-specific types
+    VARIABLE = "variable"
+    TYPE = "type"
+    MACRO = "macro"
 
     # Documentation types
     HEADER_1 = "header_1"
@@ -85,7 +90,7 @@ class ChunkType(Enum):
             self.FUNCTION, self.METHOD, self.CLASS, self.INTERFACE,
             self.STRUCT, self.ENUM, self.NAMESPACE, self.CONSTRUCTOR,
             self.PROPERTY, self.FIELD, self.TYPE_ALIAS, self.CLOSURE,
-            self.TRAIT, self.SCRIPT, self.BLOCK
+            self.TRAIT, self.SCRIPT, self.BLOCK, self.VARIABLE, self.TYPE, self.MACRO
         }
 
     @property
@@ -113,6 +118,7 @@ class Language(Enum):
     KOTLIN = "kotlin"
     BASH = "bash"
     MAKEFILE = "makefile"
+    C = "c"
 
     # Documentation languages
     MARKDOWN = "markdown"
@@ -169,6 +175,8 @@ class Language(Enum):
             '.yml': cls.YAML,
             '.toml': cls.TOML,
             '.txt': cls.TEXT,
+            '.c': cls.C,
+            '.h': cls.C,
         }
 
         return extension_map.get(extension, cls.UNKNOWN)
@@ -186,7 +194,7 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH, self.MAKEFILE
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH, self.MAKEFILE, self.C
         }
 
     @property
