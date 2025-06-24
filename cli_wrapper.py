@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Standalone CLI wrapper for ChunkHound to fix relative import issues in compiled binary."""
 
+import multiprocessing
 import sys
 from pathlib import Path
+
+# Required for PyInstaller multiprocessing support
+multiprocessing.freeze_support()
 
 # Add the chunkhound package to sys.path to enable proper imports
 # This is necessary for the compiled binary to find the chunkhound modules

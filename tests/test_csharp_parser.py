@@ -8,6 +8,17 @@ import asyncio
 from registry import get_registry, create_indexing_coordinator
 from services.indexing_coordinator import IndexingCoordinator
 from chunkhound.parser import CodeParser
+from core.types import Language
+
+
+def _is_csharp_parser_available():
+    """Check if C# parser is available through registry."""
+    try:
+        registry = get_registry()
+        csharp_parser = registry.get_language_parser(Language.CSHARP)
+        return csharp_parser is not None
+    except Exception:
+        return False
 
 
 
@@ -36,19 +47,79 @@ def code_parser():
 
 def test_parser_initialization(code_parser):
     """Test that the C# parser is properly initialized."""
-    if not hasattr(code_parser, "csharp_language") or not hasattr(code_parser, "_csharp_initialized"):
+    # Check if C# parser is available through registry
+    registry = get_registry()
+    csharp_parser = registry.get_language_parser(Language.CSHARP)
+    
+    if not csharp_parser:
         pytest.skip("C# language support not available")
     
-    assert hasattr(code_parser, "csharp_language")
-    assert hasattr(code_parser, "csharp_parser")
-    assert hasattr(code_parser, "_csharp_initialized")
+    assert csharp_parser is not None
+    assert hasattr(csharp_parser, 'parse_file')
+
+
+def test_refactored_parser_registry_integration(code_parser):
+    """Test that the refactored parser properly uses the registry system."""
+    # Verify the parser is using registry system
+    assert code_parser._registry is not None, "Parser should have registry initialized"
+    
+    # Test that parse_file delegates to registry
+    test_cs_content = """
+namespace Test {
+    public class SimpleClass {
+        public void Method() { }
+    }
+}
+"""
+    
+    # Create temporary file
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.cs', delete=False) as f:
+        f.write(test_cs_content)
+        f.flush()
+        
+        try:
+            result = code_parser.parse_file(Path(f.name))
+            
+            # Verify result structure - should get chunks from registry parser
+            assert isinstance(result, list), "Should return list of chunks"
+            if _is_csharp_parser_available():
+                assert len(result) > 0, "Should parse and return chunks for valid C# code"
+                
+                # Verify we got expected elements
+                class_chunks = [c for c in result if c["chunk_type"] == "class"]
+                assert len(class_chunks) >= 1, "Should find the SimpleClass"
+                
+                simple_class = class_chunks[0]
+                assert "SimpleClass" in simple_class["symbol"], "Should have correct class name"
+                assert "Test" in simple_class["symbol"], "Should include namespace in symbol"
+                
+        finally:
+            Path(f.name).unlink()
+
+
+def test_refactored_parser_error_handling():
+    """Test that the refactored parser handles errors properly."""
+    parser = CodeParser()
+    parser.setup()
+    
+    # Test with unsupported file type
+    with pytest.raises(RuntimeError, match="No parser plugin available"):
+        parser.parse_file(Path("/fake/file.xyz"))
+    
+    # Test with non-existent file (C# parser gracefully handles this)
+    if _is_csharp_parser_available():
+        # The C# parser logs errors but returns empty list for missing files
+        result = parser.parse_file(Path("/nonexistent/file.cs"))
+        assert isinstance(result, list), "Should return list even for missing files"
+        assert len(result) == 0, "Should return empty list for missing files"
     
 
 def test_csharp_class_parsing(code_parser, csharp_test_fixture_path):
-    """Test parsing a C# file."""
+    """Test parsing a C# file and validate specific semantic elements."""
     # Check if C# parser is available
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -59,20 +130,59 @@ def test_csharp_class_parsing(code_parser, csharp_test_fixture_path):
     # Verify we got some chunks
     assert len(chunks) > 0
     
-    # Get all chunk types for verification
-    chunk_types = [chunk["chunk_type"] for chunk in chunks]
+    # Test 1: Verify we can find the main generic Sample class
+    sample_classes = [c for c in chunks if c["chunk_type"] == "class" and "Sample" in c.get("symbol", "")]
+    assert len(sample_classes) > 0, "Should find at least one Sample class"
     
-    # Check that we found the expected semantic units (all 8 types)
-    expected_types = ["class", "method", "interface", "enum", "struct", "property", "constructor"]
-    for expected_type in expected_types:
-        assert expected_type in chunk_types, f"Expected {expected_type} not found in {chunk_types}"
+    main_sample = next((c for c in sample_classes if c["symbol"].endswith("Sample")), None)
+    assert main_sample is not None, "Should find the main Sample<T> class"
+    assert "class Sample<T>" in main_sample["code"], "Should contain generic class declaration"
+    assert "where T : IComparable<T>" in main_sample["code"], "Should contain generic constraint"
+    
+    # Test 2: Verify constructor extraction
+    constructors = [c for c in chunks if c["chunk_type"] == "constructor"]
+    assert len(constructors) >= 2, "Should find at least 2 constructors for Sample class"
+    
+    # Find parameterized constructor
+    param_constructor = next((c for c in constructors if "string name" in c["code"]), None)
+    assert param_constructor is not None, "Should find constructor with string parameter"
+    assert "ArgumentNullException" in param_constructor["code"], "Should contain null check logic"
+    
+    # Test 3: Verify method extraction with proper symbols
+    methods = [c for c in chunks if c["chunk_type"] == "method"]
+    assert len(methods) > 0, "Should find methods"
+    
+    add_item_method = next((m for m in methods if "AddItem" in m.get("symbol", "")), None)
+    if add_item_method:  # Method might not be in current fixture
+        assert "void AddItem(T item)" in add_item_method["code"] or "AddItem" in add_item_method["code"]
+    
+    # Test 4: Verify interface extraction
+    interfaces = [c for c in chunks if c["chunk_type"] == "interface"]
+    assert len(interfaces) > 0, "Should find interfaces"
+    
+    processor_interface = next((i for i in interfaces if "IProcessor" in i.get("symbol", "")), None)
+    assert processor_interface is not None, "Should find IProcessor interface"
+    
+    # Test 5: Verify namespace qualification in symbols
+    namespaced_chunks = [c for c in chunks if "Com.Example.Demo" in c.get("symbol", "")]
+    assert len(namespaced_chunks) > 0, "Should find chunks with namespace qualification"
+    
+    # Test 6: Verify chunk metadata quality
+    for chunk in chunks:
+        assert "symbol" in chunk, "Each chunk should have a symbol"
+        assert "chunk_type" in chunk, "Each chunk should have a chunk_type"
+        assert "code" in chunk, "Each chunk should have code content"
+        assert "start_line" in chunk, "Each chunk should have start_line"
+        assert "end_line" in chunk, "Each chunk should have end_line"
+        assert chunk["start_line"] <= chunk["end_line"], "start_line should be <= end_line"
+        assert len(chunk["code"].strip()) > 0, "Code content should not be empty"
 
 
 def test_csharp_enum_parsing(code_parser, csharp_test_fixture_path):
     """Test extracting C# classes."""
     # Check if C# parser is available
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -105,8 +215,8 @@ def test_csharp_enum_parsing(code_parser, csharp_test_fixture_path):
 def test_csharp_interface_parsing(code_parser, csharp_test_fixture_path):
     """Test extracting C# interfaces."""
     # Check if C# parser is available
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -134,8 +244,8 @@ def test_csharp_interface_parsing(code_parser, csharp_test_fixture_path):
 def test_csharp_struct_parsing(code_parser, csharp_test_fixture_path):
     """Test extracting C# structs."""
     # Check if C# parser is available
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -163,8 +273,8 @@ def test_csharp_struct_parsing(code_parser, csharp_test_fixture_path):
 def test_csharp_namespace_parsing(code_parser, csharp_test_fixture_path):
     """Test extracting C# enums."""
     # Check if C# parser is available
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -192,8 +302,8 @@ def test_csharp_namespace_parsing(code_parser, csharp_test_fixture_path):
 def test_csharp_delegate_parsing(code_parser, csharp_test_fixture_path):
     """Test extracting C# methods."""
     # Check if C# parser is available
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -229,8 +339,8 @@ def test_csharp_delegate_parsing(code_parser, csharp_test_fixture_path):
 def test_csharp_generics_parsing(code_parser, csharp_test_fixture_path):
     """Test extracting C# properties."""
     # Check if C# parser is available
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -263,8 +373,8 @@ def test_csharp_generics_parsing(code_parser, csharp_test_fixture_path):
 
 def test_csharp_constructor_extraction(code_parser, csharp_test_fixture_path):
     """Test extracting C# constructors."""
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -290,8 +400,8 @@ def test_csharp_constructor_extraction(code_parser, csharp_test_fixture_path):
 
 def test_csharp_namespace_extraction(code_parser, csharp_test_fixture_path):
     """Test extracting C# namespace information."""
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -319,8 +429,8 @@ def test_csharp_namespace_extraction(code_parser, csharp_test_fixture_path):
 
 def test_csharp_generic_types(code_parser, csharp_test_fixture_path):
     """Test handling C# generic types."""
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -341,8 +451,8 @@ def test_csharp_generic_types(code_parser, csharp_test_fixture_path):
 
 def test_csharp_inheritance_and_implementation(code_parser, csharp_test_fixture_path):
     """Test C# inheritance and interface implementation."""
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():
@@ -364,8 +474,8 @@ def test_csharp_inheritance_and_implementation(code_parser, csharp_test_fixture_
 
 def test_csharp_no_namespace_file(code_parser, tmp_path):
     """Test parsing a C# file without namespace declaration."""
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     # Create a temporary C# file without namespace
     no_namespace_path = tmp_path / "NoNamespace.cs"
@@ -400,8 +510,8 @@ public class NoNamespace
 
 def test_csharp_error_handling(code_parser, tmp_path):
     """Test C# parser error handling with malformed code."""
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     # Create a C# file with syntax errors
     malformed_path = tmp_path / "Malformed.cs"
@@ -422,8 +532,8 @@ public class Malformed
 
 def test_csharp_semantic_unit_coverage(code_parser, csharp_test_fixture_path):
     """Test that all 8 C# semantic unit types are extracted."""
-    if not code_parser._csharp_initialized:
-        pytest.skip("C# parser not initialized")
+    if not _is_csharp_parser_available():
+        pytest.skip("C# parser not available")
     
     sample_path = csharp_test_fixture_path / "Sample.cs"
     if not sample_path.exists():

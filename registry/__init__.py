@@ -41,36 +41,47 @@ try:
     from services.indexing_coordinator import IndexingCoordinator
     from services.search_service import SearchService
 except ImportError:
-    # PyInstaller-compatible imports
-    from chunkhound.providers.database.duckdb_provider import DuckDBProvider
-    from chunkhound.providers.embeddings.openai_provider import OpenAIEmbeddingProvider
-    from chunkhound.providers.parsing.bash_parser import BashParser
-    from chunkhound.providers.parsing.c_parser import CParser
-    from chunkhound.providers.parsing.cpp_parser import CppParser
-    from chunkhound.providers.parsing.csharp_parser import CSharpParser
-    from chunkhound.providers.parsing.go_parser import GoParser
-    from chunkhound.providers.parsing.groovy_parser import GroovyParser
-    from chunkhound.providers.parsing.java_parser import JavaParser
-    from chunkhound.providers.parsing.javascript_parser import JavaScriptParser
-    from chunkhound.providers.parsing.markdown_parser import MarkdownParser
-    from chunkhound.providers.parsing.matlab_parser import MatlabParser
+    # Alternative imports when running from different contexts
+    try:
+        # Try absolute imports from project root
+        import sys
+        import os
+        from pathlib import Path
+        
+        # Add project root to path
+        project_root = Path(__file__).parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        
+        from providers.database.duckdb_provider import DuckDBProvider
+        from providers.embeddings.openai_provider import OpenAIEmbeddingProvider
+        from providers.parsing.bash_parser import BashParser
+        from providers.parsing.c_parser import CParser
+        from providers.parsing.cpp_parser import CppParser
+        from providers.parsing.csharp_parser import CSharpParser
+        from providers.parsing.go_parser import GoParser
+        from providers.parsing.groovy_parser import GroovyParser
+        from providers.parsing.java_parser import JavaParser
+        from providers.parsing.javascript_parser import JavaScriptParser
+        from providers.parsing.kotlin_parser import KotlinParser
+        from providers.parsing.markdown_parser import MarkdownParser
+        from providers.parsing.matlab_parser import MatlabParser
 
-    # Import language parsers
-    from chunkhound.providers.parsing.python_parser import PythonParser
-    from chunkhound.providers.parsing.rust_parser import RustParser
-    from chunkhound.providers.parsing.text_parser import (
-        JsonParser,
-        PlainTextParser,
-        YamlParser,
-    )
-    from chunkhound.providers.parsing.toml_parser import TomlParser
-    from chunkhound.providers.parsing.typescript_parser import TypeScriptParser
+        # Import language parsers
+        from providers.parsing.python_parser import PythonParser
+        from providers.parsing.rust_parser import RustParser
+        from providers.parsing.text_parser import JsonParser, PlainTextParser, YamlParser
+        from providers.parsing.toml_parser import TomlParser
+        from providers.parsing.typescript_parser import TypeScriptParser
 
-    # Import services
-    from chunkhound.services.base_service import BaseService
-    from chunkhound.services.embedding_service import EmbeddingService
-    from chunkhound.services.indexing_coordinator import IndexingCoordinator
-    from chunkhound.services.search_service import SearchService
+        # Import services
+        from services.base_service import BaseService
+        from services.embedding_service import EmbeddingService
+        from services.indexing_coordinator import IndexingCoordinator
+        from services.search_service import SearchService
+    except ImportError as e:
+        # Final fallback - raise informative error with details
+        raise ImportError(f"Could not import required providers. Please check PYTHONPATH and ensure you're running from the project root directory. Original error: {e}")
 
 T = TypeVar('T')
 
