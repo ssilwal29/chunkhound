@@ -189,7 +189,8 @@ def _setup_file_patterns(args: argparse.Namespace) -> Tuple[List[str], List[str]
     """
     # Default file patterns for supported languages if none specified
     include_patterns = args.include if args.include else [
-        "*.py", "*.java", "*.cs", "*.ts", "*.tsx", "*.js", "*.jsx", "*.md", "*.markdown", "*.toml"
+        "*.py", "*.java", "*.cs", "*.ts", "*.tsx", "*.js", "*.jsx", "*.md", "*.markdown", "*.toml",
+        "Makefile", "makefile", "GNUmakefile", "*.mk", "*.make"
     ]
 
     # Default exclusion patterns

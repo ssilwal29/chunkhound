@@ -97,7 +97,7 @@ Add to `.cursor/mcp.json` in your project:
 - **Semantic search** - "Find database connection code"
 - **Regex search** - Find exact patterns like `async def.*error`
 - **Code context** - AI assistants understand your codebase structure
-- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Groovy, Kotlin, Bash, Markdown, JSON, YAML, TOML
+- **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Groovy, Kotlin, Bash, Makefile, Markdown, JSON, YAML, TOML
 
 ## Language Support
 
@@ -111,6 +111,7 @@ Add to `.cursor/mcp.json` in your project:
 | **Groovy** | `.groovy`, `.gvy`, `.gy` | Classes, methods, closures, traits, enums, scripts |
 | **Kotlin** | `.kt`, `.kts` | Classes, objects, functions, properties, data classes, extension functions |
 | **Bash** | `.sh`, `.bash`, `.zsh` | Functions, control structures, complex commands |
+| **Makefile** | `Makefile`, `makefile`, `GNUmakefile`, `.mk`, `.make` | Targets, rules, variables, recipes |
 | **Markdown** | `.md`, `.markdown` | Headers, code blocks, documentation |
 | **JSON** | `.json` | Structure and data elements |
 | **YAML** | `.yaml`, `.yml` | Configuration and data elements |
@@ -179,7 +180,6 @@ export CHUNKHOUND_BASE_URL="http://localhost:11434"
 
 - **Python**: 3.10+
 - **OpenAI API key**: Required for semantic search (regex works without)
-- **Platforms**: macOS, Linux
 
 ## How It Works
 

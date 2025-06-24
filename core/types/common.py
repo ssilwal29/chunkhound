@@ -112,6 +112,7 @@ class Language(Enum):
     GROOVY = "groovy"
     KOTLIN = "kotlin"
     BASH = "bash"
+    MAKEFILE = "makefile"
 
     # Documentation languages
     MARKDOWN = "markdown"
@@ -127,12 +128,22 @@ class Language(Enum):
 
     @classmethod
     def from_file_extension(cls, file_path: Union[str, Path]) -> "Language":
-        """Determine language from file extension."""
+        """Determine language from file extension and filename."""
         if isinstance(file_path, str):
             file_path = Path(file_path)
 
-        extension = file_path.suffix.lower()
+        # Check filename-based detection first (for Makefiles)
+        basename = file_path.name.lower()
+        filename_map = {
+            'makefile': cls.MAKEFILE,
+            'gnumakefile': cls.MAKEFILE,
+        }
+        
+        if basename in filename_map:
+            return filename_map[basename]
 
+        # Check extension-based detection
+        extension = file_path.suffix.lower()
         extension_map = {
             '.py': cls.PYTHON,
             '.java': cls.JAVA,
@@ -149,6 +160,8 @@ class Language(Enum):
             '.sh': cls.BASH,
             '.bash': cls.BASH,
             '.zsh': cls.BASH,
+            '.mk': cls.MAKEFILE,
+            '.make': cls.MAKEFILE,
             '.md': cls.MARKDOWN,
             '.markdown': cls.MARKDOWN,
             '.json': cls.JSON,
@@ -173,7 +186,7 @@ class Language(Enum):
         """Return True if this is a programming language (not documentation)."""
         return self in {
             self.PYTHON, self.JAVA, self.CSHARP, self.TYPESCRIPT,
-            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH
+            self.JAVASCRIPT, self.TSX, self.JSX, self.GROOVY, self.KOTLIN, self.BASH, self.MAKEFILE
         }
 
     @property
