@@ -245,6 +245,7 @@ class DuckDBProvider:
                     extension TEXT,
                     size INTEGER,
                     modified_time TIMESTAMP,
+                    content_crc32 BIGINT,
                     language TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -302,11 +303,35 @@ class DuckDBProvider:
                 logger.warning(f"Failed to create HNSW index for 1536-dimensional embeddings: {e}")
 
             # Note: Additional dimension tables (4096, etc.) will be created on-demand
+            
+            # Handle schema migrations for existing databases
+            self._migrate_schema()
+            
             logger.info("DuckDB schema created successfully with multi-dimension support")
 
         except Exception as e:
             logger.error(f"Failed to create DuckDB schema: {e}")
             raise
+
+    def _migrate_schema(self) -> None:
+        """Handle schema migrations for existing databases."""
+        if self.connection is None:
+            raise RuntimeError("No database connection")
+        
+        try:
+            # Check if content_crc32 column exists
+            result = self.connection.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'files' AND column_name = 'content_crc32'
+            """).fetchone()
+            
+            if result is None:
+                # Add content_crc32 column to existing files table
+                self.connection.execute("ALTER TABLE files ADD COLUMN content_crc32 BIGINT")
+                logger.info("Added content_crc32 column to files table")
+        
+        except Exception as e:
+            logger.warning(f"Failed to migrate schema: {e}")
 
     def _get_table_name_for_dimensions(self, dims: int) -> str:
         """Get table name for given embedding dimensions."""
@@ -673,13 +698,13 @@ class DuckDBProvider:
                 # File exists, update it
                 file_id = self._extract_file_id(existing)
                 if file_id is not None:
-                    self.update_file(file_id, size_bytes=file.size_bytes, mtime=file.mtime)
+                    self.update_file(file_id, size_bytes=file.size_bytes, mtime=file.mtime, content_crc32=file.content_crc32)
                     return file_id
 
             # No existing file, insert new one
             result = self.connection.execute("""
-                INSERT INTO files (path, name, extension, size, modified_time, language)
-                VALUES (?, ?, ?, ?, to_timestamp(?), ?)
+                INSERT INTO files (path, name, extension, size, modified_time, content_crc32, language)
+                VALUES (?, ?, ?, ?, to_timestamp(?), ?, ?)
                 RETURNING id
             """, [
                 str(file.path),
@@ -687,6 +712,7 @@ class DuckDBProvider:
                 file.extension,
                 file.size_bytes,
                 file.mtime,
+                file.content_crc32,
                 file.language.value if file.language else None
             ]).fetchone()
 
@@ -709,7 +735,7 @@ class DuckDBProvider:
 
         try:
             result = self.connection.execute("""
-                SELECT id, path, name, extension, size, modified_time, language, created_at, updated_at
+                SELECT id, path, name, extension, size, modified_time, content_crc32, language, created_at, updated_at
                 FROM files WHERE path = ?
             """, [path]).fetchone()
 
@@ -723,9 +749,10 @@ class DuckDBProvider:
                 "extension": result[3],
                 "size": result[4],
                 "modified_time": result[5],
-                "language": result[6],
-                "created_at": result[7],
-                "updated_at": result[8]
+                "content_crc32": result[6],
+                "language": result[7],
+                "created_at": result[8],
+                "updated_at": result[9]
             }
 
             if as_model:
@@ -733,7 +760,8 @@ class DuckDBProvider:
                     path=result[1],
                     mtime=result[5],
                     size_bytes=result[4],
-                    language=Language(result[6]) if result[6] else Language.UNKNOWN
+                    content_crc32=result[6],
+                    language=Language(result[7]) if result[7] else Language.UNKNOWN
                 )
 
             return file_dict
@@ -749,7 +777,7 @@ class DuckDBProvider:
 
         try:
             result = self.connection.execute("""
-                SELECT id, path, name, extension, size, modified_time, language, created_at, updated_at
+                SELECT id, path, name, extension, size, modified_time, content_crc32, language, created_at, updated_at
                 FROM files WHERE id = ?
             """, [file_id]).fetchone()
 
@@ -763,9 +791,10 @@ class DuckDBProvider:
                 "extension": result[3],
                 "size": result[4],
                 "modified_time": result[5],
-                "language": result[6],
-                "created_at": result[7],
-                "updated_at": result[8]
+                "content_crc32": result[6],
+                "language": result[7],
+                "created_at": result[8],
+                "updated_at": result[9]
             }
 
             if as_model:
@@ -773,7 +802,8 @@ class DuckDBProvider:
                     path=result[1],
                     mtime=result[5],
                     size_bytes=result[4],
-                    language=Language(result[6]) if result[6] else Language.UNKNOWN
+                    content_crc32=result[6],
+                    language=Language(result[7]) if result[7] else Language.UNKNOWN
                 )
 
             return file_dict
@@ -782,19 +812,20 @@ class DuckDBProvider:
             logger.error(f"Failed to get file by ID {file_id}: {e}")
             return None
 
-    def update_file(self, file_id: int, size_bytes: int | None = None, mtime: float | None = None) -> None:
+    def update_file(self, file_id: int, size_bytes: int | None = None, mtime: float | None = None, content_crc32: int | None = None) -> None:
         """Update file record with new values.
 
         Args:
             file_id: ID of the file to update
             size_bytes: New file size in bytes
             mtime: New modification timestamp
+            content_crc32: New CRC32 checksum of file content
         """
         if self.connection is None:
             raise RuntimeError("No database connection")
 
         # Skip if no updates provided
-        if size_bytes is None and mtime is None:
+        if size_bytes is None and mtime is None and content_crc32 is None:
             return
 
         try:
@@ -811,6 +842,11 @@ class DuckDBProvider:
             if mtime is not None:
                 set_clauses.append("modified_time = to_timestamp(?)")
                 values.append(mtime)
+
+            # Add CRC32 update if provided
+            if content_crc32 is not None:
+                set_clauses.append("content_crc32 = ?")
+                values.append(content_crc32)
 
             if set_clauses:
                 set_clauses.append("updated_at = CURRENT_TIMESTAMP")

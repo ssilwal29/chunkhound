@@ -27,6 +27,7 @@ class File:
         mtime: Last modification time as Unix timestamp
         language: Programming language of the file
         size_bytes: File size in bytes
+        content_crc32: CRC32 checksum of file content for change detection
         created_at: When the file was first indexed
         updated_at: When the file record was last updated
     """
@@ -35,6 +36,7 @@ class File:
     mtime: Timestamp
     language: Language
     size_bytes: int
+    content_crc32: int | None = None
     id: FileId | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -142,12 +144,18 @@ class File:
             if isinstance(updated_at, str):
                 updated_at = datetime.fromisoformat(updated_at)
 
+            # Handle content_crc32 field
+            content_crc32 = data.get("content_crc32")
+            if content_crc32 is not None:
+                content_crc32 = int(content_crc32)
+
             return cls(
                 id=file_id,
                 path=FilePath(path),
                 mtime=Timestamp(float(mtime)),
                 language=language,
                 size_bytes=int(size_bytes),
+                content_crc32=content_crc32,
                 created_at=created_at,
                 updated_at=updated_at
             )
@@ -170,6 +178,9 @@ class File:
             "language": self.language.value,
             "size_bytes": self.size_bytes,
         }
+
+        if self.content_crc32 is not None:
+            result["content_crc32"] = self.content_crc32
 
         if self.id is not None:
             result["id"] = self.id
@@ -245,6 +256,7 @@ class File:
             mtime=self.mtime,
             language=self.language,
             size_bytes=self.size_bytes,
+            content_crc32=self.content_crc32,
             created_at=self.created_at,
             updated_at=self.updated_at
         )
@@ -264,6 +276,7 @@ class File:
             mtime=new_mtime,
             language=self.language,
             size_bytes=self.size_bytes,
+            content_crc32=self.content_crc32,
             created_at=self.created_at,
             updated_at=datetime.utcnow()
         )
