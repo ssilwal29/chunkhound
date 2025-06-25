@@ -45,28 +45,13 @@ def debug_log(event_type, **data):
     except:
         pass  # Silent fail for MCP safety
 
-# Complete set of supported file extensions based on Language enum
-SUPPORTED_EXTENSIONS = {
-    '.py', '.pyw',           # Python
-    '.java',                 # Java
-    '.cs',                   # C#
-    '.ts', '.tsx',           # TypeScript
-    '.js', '.jsx',           # JavaScript
-    '.md', '.markdown',      # Markdown
-    '.rs',                   # Rust
-    '.go',                   # Go
-    '.c', '.h',              # C
-    '.cpp', '.hpp', '.cc', '.cxx',  # C++
-    '.kt',                   # Kotlin
-    '.groovy',               # Groovy
-    '.sh', '.bash',          # Bash
-    '.toml',                 # TOML
-    '.m',                    # MATLAB
-    'Makefile', 'makefile',  # Makefile
-    '.json',                 # JSON
-    '.yaml', '.yml',         # YAML
-    '.txt',                  # Text
-}
+# Import Language enum for centralized extension management
+from core.types.common import Language
+
+# Use centralized extension list from Language enum
+SUPPORTED_EXTENSIONS = Language.get_all_extensions()
+# Add special case filenames that are checked separately
+SUPPORTED_FILENAMES = {'Makefile', 'makefile', 'GNUmakefile', 'gnumakefile'}
 
 # Protocol for event handlers
 class EventHandlerProtocol(Protocol):
@@ -128,9 +113,8 @@ class ChunkHoundEventHandler(FileSystemEventHandler):
     def _should_process_file(self, file_path: Path) -> bool:
         """Check if file should be processed based on extension and patterns."""
         # For deleted files, we can't check is_file() since they no longer exist
-        # Just check the extension pattern
-        suffix = file_path.suffix.lower()
-        return suffix in self.include_patterns
+        # Check if it's a supported file using centralized logic
+        return Language.is_supported_file(file_path)
 
 
 

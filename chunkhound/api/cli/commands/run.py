@@ -195,10 +195,17 @@ def _setup_file_patterns(args: argparse.Namespace) -> tuple[list[str], list[str]
         Tuple of (include_patterns, exclude_patterns)
     """
     # Default file patterns for supported languages if none specified
-    include_patterns = args.include if args.include else [
-        "*.py", "*.java", "*.cs", "*.ts", "*.tsx", "*.js", "*.jsx", "*.md", "*.markdown", "*.toml",
-        "Makefile", "makefile", "GNUmakefile", "*.mk", "*.make"
-    ]
+    if args.include:
+        include_patterns = args.include
+    else:
+        # Get patterns from Language enum and convert to simple glob patterns
+        from core.types.common import Language
+        patterns = []
+        for ext in Language.get_all_extensions():
+            patterns.append(f"*{ext}")
+        # Add special filenames
+        patterns.extend(["Makefile", "makefile", "GNUmakefile", "gnumakefile"])
+        include_patterns = patterns
 
     # Default exclusion patterns
     default_excludes = [

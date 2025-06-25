@@ -222,3 +222,46 @@ class Language(Enum):
         return self in {
             self.JAVA, self.CSHARP, self.TYPESCRIPT, self.TSX
         }
+    
+    @classmethod
+    def get_all_extensions(cls) -> set[str]:
+        """Get all supported file extensions."""
+        extensions = set()
+        
+        # Extension-based mappings
+        extension_map = {
+            '.py', '.java', '.cs', '.ts', '.js', '.tsx', '.jsx',
+            '.groovy', '.gvy', '.gy', '.kt', '.kts', '.go',
+            '.sh', '.bash', '.zsh', '.mk', '.make',
+            '.md', '.markdown', '.json', '.yaml', '.yml',
+            '.toml', '.txt', '.c', '.h', '.cpp', '.cxx',
+            '.cc', '.hpp', '.hxx', '.h++', '.rs', '.m'
+        }
+        
+        extensions.update(extension_map)
+        return extensions
+    
+    @classmethod
+    def get_file_patterns(cls) -> list[str]:
+        """Get glob patterns for all supported file types."""
+        patterns = []
+        
+        # Add extension-based patterns
+        for ext in cls.get_all_extensions():
+            patterns.append(f"**/*{ext}")
+        
+        # Add filename-based patterns (for Makefiles)
+        patterns.extend([
+            "**/Makefile",
+            "**/makefile", 
+            "**/GNUmakefile",
+            "**/gnumakefile"
+        ])
+        
+        return patterns
+    
+    @classmethod
+    def is_supported_file(cls, file_path: str | Path) -> bool:
+        """Check if a file is supported based on its extension or name."""
+        language = cls.from_file_extension(file_path)
+        return language != cls.UNKNOWN
