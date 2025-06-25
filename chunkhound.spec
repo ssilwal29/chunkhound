@@ -47,6 +47,16 @@ try:
     import tree_sitter
     import tree_sitter_python
     import tree_sitter_markdown
+    import tree_sitter_language_pack
+    
+    # Import all available tree-sitter language modules
+    lang_modules = []
+    for lang in ['c', 'cpp', 'go', 'rust', 'kotlin', 'groovy', 'java', 'csharp', 'typescript', 'javascript', 'bash']:
+        try:
+            module = __import__(f'tree_sitter_{lang}')
+            lang_modules.append(module)
+        except ImportError:
+            pass
 
     # Find tree-sitter binary files
     ts_path = Path(tree_sitter.__file__).parent
@@ -58,14 +68,32 @@ try:
         tree_sitter_datas.append((str(dll_file), 'tree_sitter'))
 
     # Add language-specific binaries
-    for lang_module in [tree_sitter_python, tree_sitter_markdown]:
+    all_lang_modules = [tree_sitter_python, tree_sitter_markdown] + lang_modules
+    for lang_module in all_lang_modules:
         lang_path = Path(lang_module.__file__).parent
+        lang_name = lang_module.__name__.split("_")[-1]
         for so_file in lang_path.rglob('*.so'):
-            tree_sitter_datas.append((str(so_file), f'tree_sitter_{lang_module.__name__.split("_")[-1]}'))
+            tree_sitter_datas.append((str(so_file), f'tree_sitter_{lang_name}'))
         for dylib_file in lang_path.rglob('*.dylib'):
-            tree_sitter_datas.append((str(dylib_file), f'tree_sitter_{lang_module.__name__.split("_")[-1]}'))
+            tree_sitter_datas.append((str(dylib_file), f'tree_sitter_{lang_name}'))
         for dll_file in lang_path.rglob('*.dll'):
-            tree_sitter_datas.append((str(dll_file), f'tree_sitter_{lang_module.__name__.split("_")[-1]}'))
+            tree_sitter_datas.append((str(dll_file), f'tree_sitter_{lang_name}'))
+
+    # Add tree-sitter language pack binaries
+    try:
+        pack_path = Path(tree_sitter_language_pack.__file__).parent
+        bindings_path = pack_path / 'bindings'
+        if bindings_path.exists():
+            for binding_file in bindings_path.glob('*.so'):
+                tree_sitter_datas.append((str(binding_file), 'tree_sitter_language_pack/bindings'))
+            for binding_file in bindings_path.glob('*.abi3.so'):
+                tree_sitter_datas.append((str(binding_file), 'tree_sitter_language_pack/bindings'))
+            for binding_file in bindings_path.glob('*.dylib'):
+                tree_sitter_datas.append((str(binding_file), 'tree_sitter_language_pack/bindings'))
+            for binding_file in bindings_path.glob('*.dll'):
+                tree_sitter_datas.append((str(binding_file), 'tree_sitter_language_pack/bindings'))
+    except NameError:
+        pass
 
 except ImportError:
     print("Warning: Could not import tree-sitter modules")
@@ -154,6 +182,19 @@ hiddenimports = [
     'tree_sitter_python',
     'tree_sitter_markdown',
     'tree_sitter_language_pack',
+    
+    # All tree-sitter language modules
+    'tree_sitter_c',
+    'tree_sitter_cpp', 
+    'tree_sitter_go',
+    'tree_sitter_rust',
+    'tree_sitter_kotlin',
+    'tree_sitter_groovy',
+    'tree_sitter_java',
+    'tree_sitter_csharp',
+    'tree_sitter_typescript',
+    'tree_sitter_javascript',
+    'tree_sitter_bash',
     'tiktoken',
     'tiktoken_ext',
     'tiktoken_ext.openai_public',
