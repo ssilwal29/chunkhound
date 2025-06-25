@@ -18,3 +18,5 @@ ChunkHound is a semantic and regex search tool for codebases that provides MCP (
 - Test files for modification and creation verification
 - `<project dir>/tickets` contains project tickets
 
+# Important!
+- Avoid logs in the MCP server that will mess with the JSON-RPC
