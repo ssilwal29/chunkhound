@@ -40,6 +40,7 @@ try:
     from .database import Database
     from .embeddings import EmbeddingManager
     from .file_watcher import FileWatcherManager
+    from .periodic_indexer import PeriodicIndexManager
     from .registry import configure_registry, get_registry
     from .signal_coordinator import SignalCoordinator
     from .task_coordinator import TaskCoordinator, TaskPriority
@@ -49,6 +50,7 @@ except ImportError:
     from chunkhound.database import Database
     from chunkhound.embeddings import EmbeddingManager
     from chunkhound.file_watcher import FileWatcherManager
+    from chunkhound.periodic_indexer import PeriodicIndexManager
     from chunkhound.signal_coordinator import SignalCoordinator
     from chunkhound.task_coordinator import TaskCoordinator, TaskPriority
     from registry import configure_registry
@@ -60,6 +62,7 @@ _embedding_manager: EmbeddingManager | None = None
 _file_watcher: FileWatcherManager | None = None
 _signal_coordinator: SignalCoordinator | None = None
 _task_coordinator: TaskCoordinator | None = None
+_periodic_indexer: PeriodicIndexManager | None = None
 
 # Initialize MCP server with explicit stdio
 server = Server("ChunkHound Code Search")
@@ -133,7 +136,7 @@ def log_environment_diagnostics():
 @asynccontextmanager
 async def server_lifespan(server: Server) -> AsyncIterator[dict]:
     """Manage server startup and shutdown lifecycle."""
-    global _database, _embedding_manager, _file_watcher, _signal_coordinator, _task_coordinator
+    global _database, _embedding_manager, _file_watcher, _signal_coordinator, _task_coordinator, _periodic_indexer
 
     # Set MCP mode to suppress stderr output that interferes with JSON-RPC
     os.environ["CHUNKHOUND_MCP_MODE"] = "1"
@@ -284,11 +287,46 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
                 traceback.print_exc(file=sys.stderr)
             raise RuntimeError(error_msg)
 
+        # Initialize periodic indexer for background scanning
+        try:
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: Initializing periodic indexer...", file=sys.stderr)
+            
+            # Get base directory from environment or use current working directory
+            base_directory = Path(os.getcwd())
+            
+            # Get IndexingCoordinator from registry
+            try:
+                from .registry import get_registry
+            except ImportError:
+                from registry import get_registry
+            indexing_coordinator = get_registry().create_indexing_coordinator()
+            
+            # Create periodic indexer with environment configuration
+            _periodic_indexer = PeriodicIndexManager.from_environment(
+                indexing_coordinator=indexing_coordinator,
+                task_coordinator=_task_coordinator,
+                base_directory=base_directory
+            )
+            
+            # Start periodic indexer (immediate startup scan + periodic scans)
+            await _periodic_indexer.start()
+            
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print("Server lifespan: Periodic indexer initialized successfully", file=sys.stderr)
+        except Exception as pi_error:
+            # Non-fatal error - log but continue without periodic indexing
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Server lifespan: Periodic indexer initialization failed (non-fatal): {pi_error}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+            _periodic_indexer = None
+
         if "CHUNKHOUND_DEBUG" in os.environ:
             print("Server lifespan: All components initialized successfully", file=sys.stderr)
 
         # Return server context to the caller
-        yield {"db": _database, "embeddings": _embedding_manager, "watcher": _file_watcher, "task_coordinator": _task_coordinator}
+        yield {"db": _database, "embeddings": _embedding_manager, "watcher": _file_watcher, "task_coordinator": _task_coordinator, "periodic_indexer": _periodic_indexer}
 
     except Exception as e:
         if "CHUNKHOUND_DEBUG" in os.environ:
@@ -299,6 +337,18 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
     finally:
         if "CHUNKHOUND_DEBUG" in os.environ:
             print("Server lifespan: Entering cleanup phase", file=sys.stderr)
+
+        # Cleanup periodic indexer
+        if _periodic_indexer:
+            try:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Stopping periodic indexer...", file=sys.stderr)
+                await _periodic_indexer.stop()
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("Server lifespan: Periodic indexer stopped", file=sys.stderr)
+            except Exception as pi_cleanup_error:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Server lifespan: Error stopping periodic indexer: {pi_cleanup_error}", file=sys.stderr)
 
         # Cleanup task coordinator
         if _task_coordinator:
