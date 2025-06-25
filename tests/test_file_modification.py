@@ -89,7 +89,7 @@ def search_for_content_via_mcp(search_term, search_type="regex"):
             from chunkhound.database import Database
             db = Database("chunkhound.db")
             db.connect()
-            results = db.search_regex(search_term, limit=10)
+            results, pagination = db.search_regex(search_term, page_size=10)
             db.close()
             
             if results:
