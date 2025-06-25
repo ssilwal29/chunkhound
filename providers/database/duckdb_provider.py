@@ -167,20 +167,34 @@ class DuckDBProvider:
         else:
             logger.warning(f"WAL corruption detected but no WAL file found at: {wal_file}")
 
-    def disconnect(self) -> None:
-        """Close database connection with proper checkpointing."""
+    def disconnect(self, skip_checkpoint: bool = False) -> None:
+        """Close database connection with optional checkpointing.
+        
+        Args:
+            skip_checkpoint: If True, skip the checkpoint operation (useful when checkpoint 
+                           was already done recently to avoid checkpoint conflicts)
+        """
         if self.connection is not None:
             try:
-                # Force checkpoint before close to ensure durability
-                self.connection.execute("CHECKPOINT")
-                logger.debug("Database checkpoint completed before disconnect")
+                if not skip_checkpoint:
+                    # Force checkpoint before close to ensure durability
+                    self.connection.execute("CHECKPOINT")
+                    # Only log in non-MCP mode to avoid JSON-RPC interference
+                    if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                        logger.debug("Database checkpoint completed before disconnect")
+                else:
+                    if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                        logger.debug("Skipping checkpoint before disconnect (already done)")
             except Exception as e:
-                logger.error(f"Checkpoint failed during disconnect: {e}")
+                # Only log errors in non-MCP mode
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.error(f"Checkpoint failed during disconnect: {e}")
                 # Continue with close - don't block shutdown
             finally:
                 self.connection.close()
                 self.connection = None
-                logger.info("DuckDB connection closed")
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.info("DuckDB connection closed")
 
     def _load_extensions(self) -> None:
         """Load required DuckDB extensions."""
@@ -667,9 +681,11 @@ class DuckDBProvider:
             # Checkpoint after large bulk operations to ensure durability
             try:
                 self.connection.execute("CHECKPOINT")
-                logger.debug("Bulk operation checkpoint completed")
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.debug("Bulk operation checkpoint completed")
             except Exception as e:
-                logger.warning(f"Bulk operation checkpoint failed: {e}")
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.warning(f"Bulk operation checkpoint failed: {e}")
 
             logger.info("Bulk operation completed successfully with index management")
             return result
@@ -1965,9 +1981,11 @@ class DuckDBProvider:
         if force_checkpoint:
             try:
                 self.connection.execute("CHECKPOINT")
-                logger.debug("Transaction committed with checkpoint")
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.debug("Transaction committed with checkpoint")
             except Exception as e:
-                logger.warning(f"Post-commit checkpoint failed: {e}")
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.warning(f"Post-commit checkpoint failed: {e}")
 
     def rollback_transaction(self) -> None:
         """Rollback the current transaction."""

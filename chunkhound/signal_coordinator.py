@@ -114,9 +114,13 @@ class SignalCoordinator:
             self.database_manager.connection):
             try:
                 self.database_manager.connection.execute("CHECKPOINT")
-                logger.info("Emergency checkpoint completed")
+                # Only log in non-MCP mode to avoid JSON-RPC interference
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.info("Emergency checkpoint completed")
             except Exception as e:
-                logger.error(f"Emergency checkpoint failed: {e}")
+                # Only log errors in non-MCP mode
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.error(f"Emergency checkpoint failed: {e}")
 
         # Cleanup coordination files
         self.cleanup_coordination_files()
