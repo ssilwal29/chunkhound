@@ -1,8 +1,8 @@
 # ChunkHound
 
-**Semantic and Regex search for your codebase via MCP.**
+**Modern RAG for your codebase - semantic and regex search via MCP.**
 
-Enable AI assistants to search your code with natural language and regex patterns.
+Transform your codebase into a searchable knowledge base. ChunkHound provides AI assistants with intelligent code search capabilities using natural language and regex patterns.
 
 ## Installation
 
@@ -295,15 +295,6 @@ First, install the binary from [GitHub Releases](https://github.com/ofriw/chunkh
 
 </details>
 
-<details>
-<summary><strong>Troubleshooting</strong></summary>
-
-- **For Node.js environments**: Use Node.js v18+ 
-- **Module resolution issues**: Try `uv tool install chunkhound` first
-- **Permission errors**: Ensure the binary is executable: `chmod +x chunkhound`
-- **Path issues**: Make sure `uv` or `chunkhound` binary is in your PATH
-- **Environment variables**: Set `OPENAI_API_KEY` in your shell profile if not using the `env` config
-</details>
 
 ## What You Get
 
@@ -311,6 +302,31 @@ First, install the binary from [GitHub Releases](https://github.com/ofriw/chunkh
 - **Regex search** - Find exact patterns like `async def.*error`
 - **Code context** - AI assistants understand your codebase structure
 - **Multi-language** - Python, TypeScript, Java, C#, JavaScript, Groovy, Kotlin, Go, Rust, C, C++, Matlab, Bash, Makefile, Markdown, JSON, YAML, TOML
+- **Pagination** - Efficiently handle large result sets with smart pagination controls
+
+## Search Pagination
+
+ChunkHound supports efficient pagination for both semantic and regex searches to handle large codebases:
+
+- **Page size**: Control results per page (1-100, default: 10)
+- **Offset**: Navigate through result pages starting from any position
+- **Smart metadata**: Automatic `has_more` detection and `next_offset` calculation
+- **Total counts**: Get complete result counts for accurate pagination
+- **Token limiting**: Automatic response size optimization for MCP compatibility
+
+Both search tools return results with pagination metadata:
+```json
+{
+  "results": [...],
+  "pagination": {
+    "offset": 0,
+    "page_size": 10,
+    "has_more": true,
+    "next_offset": 10,
+    "total": 47
+  }
+}
+```
 
 ## Language Support
 
