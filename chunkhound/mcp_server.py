@@ -389,6 +389,24 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
             try:
                 if "CHUNKHOUND_DEBUG" in os.environ:
                     print("Server lifespan: Closing database connection...", file=sys.stderr)
+                
+                # Ensure all pending operations complete
+                if _task_coordinator:
+                    try:
+                        await asyncio.wait_for(_task_coordinator.wait_for_completion(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        logger.warning("Task coordinator cleanup timeout")
+                
+                # Force checkpoint before shutdown
+                if _database.is_connected():
+                    try:
+                        _database._provider.connection.execute("CHECKPOINT")
+                        if "CHUNKHOUND_DEBUG" in os.environ:
+                            print("Server lifespan: Database checkpoint completed", file=sys.stderr)
+                    except Exception as e:
+                        if "CHUNKHOUND_DEBUG" in os.environ:
+                            print(f"Server lifespan: Checkpoint failed: {e}", file=sys.stderr)
+                
                 _database.close()
                 if "CHUNKHOUND_DEBUG" in os.environ:
                     print("Server lifespan: Database connection closed successfully", file=sys.stderr)

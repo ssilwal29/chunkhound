@@ -168,11 +168,19 @@ class DuckDBProvider:
             logger.warning(f"WAL corruption detected but no WAL file found at: {wal_file}")
 
     def disconnect(self) -> None:
-        """Close database connection and cleanup resources."""
+        """Close database connection with proper checkpointing."""
         if self.connection is not None:
-            self.connection.close()
-            self.connection = None
-            logger.info("DuckDB connection closed")
+            try:
+                # Force checkpoint before close to ensure durability
+                self.connection.execute("CHECKPOINT")
+                logger.debug("Database checkpoint completed before disconnect")
+            except Exception as e:
+                logger.error(f"Checkpoint failed during disconnect: {e}")
+                # Continue with close - don't block shutdown
+            finally:
+                self.connection.close()
+                self.connection = None
+                logger.info("DuckDB connection closed")
 
     def _load_extensions(self) -> None:
         """Load required DuckDB extensions."""
@@ -655,6 +663,14 @@ class DuckDBProvider:
 
             # Commit transaction
             self.connection.execute("COMMIT")
+
+            # Checkpoint after large bulk operations to ensure durability
+            try:
+                self.connection.execute("CHECKPOINT")
+                logger.debug("Bulk operation checkpoint completed")
+            except Exception as e:
+                logger.warning(f"Bulk operation checkpoint failed: {e}")
+
             logger.info("Bulk operation completed successfully with index management")
             return result
 
@@ -1939,12 +1955,19 @@ class DuckDBProvider:
 
         self.connection.execute("BEGIN TRANSACTION")
 
-    def commit_transaction(self) -> None:
-        """Commit the current transaction."""
+    def commit_transaction(self, force_checkpoint: bool = False) -> None:
+        """Commit the current transaction with optional checkpoint."""
         if self.connection is None:
             raise RuntimeError("No database connection")
-
+        
         self.connection.execute("COMMIT")
+        
+        if force_checkpoint:
+            try:
+                self.connection.execute("CHECKPOINT")
+                logger.debug("Transaction committed with checkpoint")
+            except Exception as e:
+                logger.warning(f"Post-commit checkpoint failed: {e}")
 
     def rollback_transaction(self) -> None:
         """Rollback the current transaction."""

@@ -108,6 +108,16 @@ class SignalCoordinator:
         logger.info(f"Received termination signal ({signum})")
         self._shutdown_requested = True
 
+        # Emergency database checkpoint
+        if (self.database_manager and 
+            hasattr(self.database_manager, 'connection') and 
+            self.database_manager.connection):
+            try:
+                self.database_manager.connection.execute("CHECKPOINT")
+                logger.info("Emergency checkpoint completed")
+            except Exception as e:
+                logger.error(f"Emergency checkpoint failed: {e}")
+
         # Cleanup coordination files
         self.cleanup_coordination_files()
 
