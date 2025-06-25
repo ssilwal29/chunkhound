@@ -1,5 +1,6 @@
 """C language parser provider implementation for ChunkHound using tree-sitter."""
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -7,23 +8,32 @@ from loguru import logger
 
 from core.types import ChunkType
 from core.types import Language as CoreLanguage
-from interfaces.language_parser import ParseConfig
-from providers.parsing.base_parser import TreeSitterParserBase
+from interfaces.language_parser import ParseConfig, ParseResult
 
 try:
-    import tree_sitter_c
-    from tree_sitter import Language, Parser
+    from tree_sitter import Language as TSLanguage
     from tree_sitter import Node as TSNode
-    TREE_SITTER_AVAILABLE = True
+    from tree_sitter import Parser as TSParser
+    from tree_sitter_language_pack import get_language, get_parser
+    C_AVAILABLE = True
 except ImportError:
-    TREE_SITTER_AVAILABLE = False
+    C_AVAILABLE = False
+    get_language = None
+    get_parser = None
+    TSLanguage = None
+    TSParser = None
     TSNode = None
-    Language = None
-    Parser = None
-    tree_sitter_c = None
+
+# Try direct import as fallback
+try:
+    import tree_sitter_c as ts_c
+    C_DIRECT_AVAILABLE = True
+except ImportError:
+    C_DIRECT_AVAILABLE = False
+    ts_c = None
 
 
-class CParser(TreeSitterParserBase):
+class CParser:
     """C language parser using tree-sitter."""
 
     def __init__(self, config: ParseConfig | None = None):
@@ -32,39 +42,16 @@ class CParser(TreeSitterParserBase):
         Args:
             config: Optional parse configuration
         """
-        super().__init__(CoreLanguage.C, config)
+        self._language = None
+        self._parser = None
+        self._initialized = False
 
-    def _initialize(self) -> bool:
-        """Initialize the C parser using direct tree-sitter-c package.
-
-        Returns:
-            True if initialization successful, False otherwise
-        """
-        if self._initialized:
-            return True
-
-        if not TREE_SITTER_AVAILABLE or tree_sitter_c is None:
-            logger.error("C tree-sitter support not available")
-            return False
-
-        try:
-            # Use direct tree-sitter-c instead of language pack
-            self._language = Language(tree_sitter_c.language())
-            self._parser = Parser(self._language)
-            self._initialized = True
-            logger.debug("C parser initialized successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to initialize C parser: {e}")
-            return False
-
-    def _get_default_config(self) -> ParseConfig:
-        """Get default configuration for C parser."""
-        return ParseConfig(
+        # Default configuration for C-specific chunk types
+        self._config = config or ParseConfig(
             language=CoreLanguage.C,
             chunk_types={
                 ChunkType.FUNCTION,
-                ChunkType.CLASS,  # structs/unions mapped to class
+                ChunkType.STRUCT,
                 ChunkType.ENUM,
                 ChunkType.VARIABLE,
                 ChunkType.TYPE,
@@ -77,6 +64,138 @@ class CParser(TreeSitterParserBase):
             include_docstrings=True,
             max_depth=10,
             use_cache=True
+        )
+
+        # Initialize parser - crash if dependencies unavailable
+        if not C_AVAILABLE and not C_DIRECT_AVAILABLE:
+            raise ImportError("C tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-c")
+        
+        if not self._initialize():
+            raise RuntimeError("Failed to initialize C parser")
+
+    def _initialize(self) -> bool:
+        """Initialize the C parser.
+
+        Returns:
+            True if initialization successful, False otherwise
+        """
+        if self._initialized:
+            return True
+
+        if not C_AVAILABLE and not C_DIRECT_AVAILABLE:
+            logger.error("C tree-sitter support not available")
+            return False
+
+        # Try direct import first
+        try:
+            if C_DIRECT_AVAILABLE and ts_c and TSLanguage and TSParser:
+                self._language = TSLanguage(ts_c.language())
+                self._parser = TSParser(self._language)
+                self._initialized = True
+                logger.debug("C parser initialized successfully (direct)")
+                return True
+        except Exception as e:
+            logger.debug(f"Direct C parser initialization failed: {e}")
+
+        # Fallback to language pack
+        try:
+            if C_AVAILABLE and get_language and get_parser:
+                self._language = get_language('c')
+                self._parser = get_parser('c')
+                self._initialized = True
+                logger.debug("C parser initialized successfully (language pack)")
+                return True
+        except Exception as e:
+            logger.error(f"C parser language pack initialization failed: {e}")
+
+        logger.error("C parser initialization failed with both methods")
+        return False
+
+    @property
+    def language(self) -> CoreLanguage:
+        """Programming language this parser handles."""
+        return CoreLanguage.C
+
+    @property
+    def supported_chunk_types(self) -> set[ChunkType]:
+        """Chunk types this parser can extract."""
+        return self._config.chunk_types
+
+    @property
+    def is_available(self) -> bool:
+        """Whether the parser is available and ready to use."""
+        return (C_AVAILABLE or C_DIRECT_AVAILABLE) and self._initialized
+
+    def _get_node_text(self, node: TSNode, source: str) -> str:
+        """Extract text content from a tree-sitter node."""
+        return source[node.start_byte:node.end_byte]
+
+    def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
+        """Parse a C file and extract semantic chunks.
+
+        Args:
+            file_path: Path to C file
+            source: Optional source code string
+
+        Returns:
+            ParseResult with extracted chunks and metadata
+        """
+        start_time = time.time()
+        chunks = []
+        errors = []
+        warnings = []
+
+        if not self.is_available:
+            errors.append("C parser not available")
+            return ParseResult(
+                chunks=chunks,
+                language=self.language,
+                total_chunks=0,
+                parse_time=time.time() - start_time,
+                errors=errors,
+                warnings=warnings,
+                metadata={"file_path": str(file_path)}
+            )
+
+        try:
+            # Read source if not provided
+            if source is None:
+                with open(file_path, encoding='utf-8') as f:
+                    source = f.read()
+
+            # Parse with tree-sitter
+            if self._parser is None:
+                errors.append("C parser not initialized")
+                return ParseResult(
+                    chunks=chunks,
+                    language=self.language,
+                    total_chunks=0,
+                    parse_time=time.time() - start_time,
+                    errors=errors,
+                    warnings=warnings,
+                    metadata={"file_path": str(file_path)}
+                )
+
+            tree = self._parser.parse(bytes(source, 'utf8'))
+
+            # Extract semantic units
+            chunks = self._extract_chunks(tree.root_node, source, file_path)
+
+            logger.debug(f"Extracted {len(chunks)} chunks from {file_path}")
+
+        except Exception as e:
+            error_msg = f"Failed to parse C file {file_path}: {e}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+        return ParseResult(
+            chunks=chunks,
+            language=self.language,
+            total_chunks=len(chunks),
+            parse_time=time.time() - start_time,
+            errors=errors,
+            warnings=warnings,
+            metadata={"file_path": str(file_path)}
         )
 
     def _extract_chunks(
@@ -407,3 +526,37 @@ class CParser(TreeSitterParserBase):
             logger.error(f"Failed to extract C macros: {e}")
 
         return chunks
+
+    def _create_chunk(
+        self, node: TSNode, source: str, file_path: Path, 
+        chunk_type: ChunkType, symbol: str, display_name: str
+    ) -> dict[str, Any]:
+        """Create a chunk dictionary from a tree-sitter node.
+        
+        Args:
+            node: Tree-sitter node
+            source: Source code string
+            file_path: Path to source file
+            chunk_type: Type of chunk
+            symbol: Symbol name
+            display_name: Display name for the chunk
+            
+        Returns:
+            Chunk dictionary
+        """
+        content = self._get_node_text(node, source)
+        
+        return {
+            "symbol": symbol,
+            "start_line": node.start_point[0] + 1,
+            "end_line": node.end_point[0] + 1,
+            "code": content,
+            "chunk_type": chunk_type.value,
+            "language": "c",
+            "path": str(file_path),
+            "name": symbol,
+            "display_name": display_name,
+            "content": content,
+            "start_byte": node.start_byte,
+            "end_byte": node.end_byte,
+        }

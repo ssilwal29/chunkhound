@@ -81,25 +81,8 @@ class IndexingCoordinator(BaseService):
         Returns:
             Language enum value or None if unsupported
         """
-        suffix = file_path.suffix.lower()
-
-        language_map = {
-            '.py': Language.PYTHON,
-            '.java': Language.JAVA,
-            '.cs': Language.CSHARP,
-            '.ts': Language.TYPESCRIPT,
-            '.js': Language.JAVASCRIPT,
-            '.tsx': Language.TSX,
-            '.jsx': Language.JSX,
-            '.md': Language.MARKDOWN,
-            '.markdown': Language.MARKDOWN,
-            '.json': Language.JSON,
-            '.yaml': Language.YAML,
-            '.yml': Language.YAML,
-            '.txt': Language.TEXT,
-        }
-
-        return language_map.get(suffix)
+        language = Language.from_file_extension(file_path)
+        return language if language != Language.UNKNOWN else None
 
     async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> dict[str, Any]:
         """Process a single file through the complete indexing pipeline.
@@ -652,7 +635,12 @@ class IndexingCoordinator(BaseService):
 
         # Default patterns for supported languages
         if not patterns:
-            patterns = ["*.py", "*.java", "*.cs", "*.ts", "*.js", "*.tsx", "*.jsx", "*.md", "*.markdown"]
+            # Get patterns from Language enum
+            patterns = []
+            for ext in Language.get_all_extensions():
+                patterns.append(f"*{ext}")
+            # Add special filenames
+            patterns.extend(["Makefile", "makefile", "GNUmakefile", "gnumakefile"])
 
         # Default exclude patterns
         if not exclude_patterns:

@@ -1,5 +1,6 @@
 """Kotlin language parser provider implementation for ChunkHound using tree-sitter."""
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -7,23 +8,32 @@ from loguru import logger
 
 from core.types import ChunkType
 from core.types import Language as CoreLanguage
-from interfaces.language_parser import ParseConfig
-from providers.parsing.base_parser import TreeSitterParserBase
+from interfaces.language_parser import ParseConfig, ParseResult
 
 try:
-    import tree_sitter_kotlin
-    from tree_sitter import Language, Parser
+    from tree_sitter import Language as TSLanguage
     from tree_sitter import Node as TSNode
-    TREE_SITTER_AVAILABLE = True
+    from tree_sitter import Parser as TSParser
+    from tree_sitter_language_pack import get_language, get_parser
+    KOTLIN_AVAILABLE = True
 except ImportError:
-    TREE_SITTER_AVAILABLE = False
+    KOTLIN_AVAILABLE = False
+    get_language = None
+    get_parser = None
+    TSLanguage = None
+    TSParser = None
     TSNode = None
-    Language = None
-    Parser = None
-    tree_sitter_kotlin = None
+
+# Try direct import as fallback
+try:
+    import tree_sitter_kotlin as ts_kotlin
+    KOTLIN_DIRECT_AVAILABLE = True
+except ImportError:
+    KOTLIN_DIRECT_AVAILABLE = False
+    ts_kotlin = None
 
 
-class KotlinParser(TreeSitterParserBase):
+class KotlinParser:
     """Kotlin language parser using tree-sitter."""
 
     def __init__(self, config: ParseConfig | None = None):
@@ -32,46 +42,20 @@ class KotlinParser(TreeSitterParserBase):
         Args:
             config: Optional parse configuration
         """
-        super().__init__(CoreLanguage.KOTLIN, config)
+        self._language = None
+        self._parser = None
+        self._initialized = False
 
-    def _initialize(self) -> bool:
-        """Initialize the Kotlin parser using tree-sitter-kotlin package.
-
-        Returns:
-            True if initialization successful, False otherwise
-        """
-        if self._initialized:
-            return True
-
-        if not TREE_SITTER_AVAILABLE or tree_sitter_kotlin is None:
-            logger.error("Kotlin tree-sitter support not available")
-            return False
-
-        try:
-            self._language = Language(tree_sitter_kotlin.language())
-            self._parser = Parser(self._language)
-            self._initialized = True
-            logger.debug("Kotlin parser initialized successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to initialize Kotlin parser: {e}")
-            return False
-
-    def _get_default_config(self) -> ParseConfig:
-        """Get default configuration for Kotlin parser."""
-        return ParseConfig(
+        # Default configuration for Kotlin-specific chunk types
+        self._config = config or ParseConfig(
             language=CoreLanguage.KOTLIN,
             chunk_types={
                 ChunkType.CLASS,
                 ChunkType.INTERFACE,
                 ChunkType.METHOD,
-                ChunkType.CONSTRUCTOR,
-                ChunkType.FIELD,
+                ChunkType.FUNCTION,
+                ChunkType.VARIABLE,
                 ChunkType.ENUM,
-                ChunkType.OBJECT,
-                ChunkType.COMPANION_OBJECT,
-                ChunkType.DATA_CLASS,
-                ChunkType.EXTENSION_FUNCTION
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -80,6 +64,138 @@ class KotlinParser(TreeSitterParserBase):
             include_docstrings=True,
             max_depth=10,
             use_cache=True
+        )
+
+        # Initialize parser - crash if dependencies unavailable
+        if not KOTLIN_AVAILABLE and not KOTLIN_DIRECT_AVAILABLE:
+            raise ImportError("Kotlin tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-kotlin")
+        
+        if not self._initialize():
+            raise RuntimeError("Failed to initialize Kotlin parser")
+
+    def _initialize(self) -> bool:
+        """Initialize the Kotlin parser.
+
+        Returns:
+            True if initialization successful, False otherwise
+        """
+        if self._initialized:
+            return True
+
+        if not KOTLIN_AVAILABLE and not KOTLIN_DIRECT_AVAILABLE:
+            logger.error("Kotlin tree-sitter support not available")
+            return False
+
+        # Try direct import first
+        try:
+            if KOTLIN_DIRECT_AVAILABLE and ts_kotlin and TSLanguage and TSParser:
+                self._language = TSLanguage(ts_kotlin.language())
+                self._parser = TSParser(self._language)
+                self._initialized = True
+                logger.debug("Kotlin parser initialized successfully (direct)")
+                return True
+        except Exception as e:
+            logger.debug(f"Direct Kotlin parser initialization failed: {e}")
+
+        # Fallback to language pack
+        try:
+            if KOTLIN_AVAILABLE and get_language and get_parser:
+                self._language = get_language('kotlin')
+                self._parser = get_parser('kotlin')
+                self._initialized = True
+                logger.debug("Kotlin parser initialized successfully (language pack)")
+                return True
+        except Exception as e:
+            logger.error(f"Kotlin parser language pack initialization failed: {e}")
+
+        logger.error("Kotlin parser initialization failed with both methods")
+        return False
+
+    @property
+    def language(self) -> CoreLanguage:
+        """Programming language this parser handles."""
+        return CoreLanguage.KOTLIN
+
+    @property
+    def supported_chunk_types(self) -> set[ChunkType]:
+        """Chunk types this parser can extract."""
+        return self._config.chunk_types
+
+    @property
+    def is_available(self) -> bool:
+        """Whether the parser is available and ready to use."""
+        return (KOTLIN_AVAILABLE or KOTLIN_DIRECT_AVAILABLE) and self._initialized
+
+    def _get_node_text(self, node: TSNode, source: str) -> str:
+        """Extract text content from a tree-sitter node."""
+        return source[node.start_byte:node.end_byte]
+
+    def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
+        """Parse a Kotlin file and extract semantic chunks.
+
+        Args:
+            file_path: Path to Kotlin file
+            source: Optional source code string
+
+        Returns:
+            ParseResult with extracted chunks and metadata
+        """
+        start_time = time.time()
+        chunks = []
+        errors = []
+        warnings = []
+
+        if not self.is_available:
+            errors.append("Kotlin parser not available")
+            return ParseResult(
+                chunks=chunks,
+                language=self.language,
+                total_chunks=0,
+                parse_time=time.time() - start_time,
+                errors=errors,
+                warnings=warnings,
+                metadata={"file_path": str(file_path)}
+            )
+
+        try:
+            # Read source if not provided
+            if source is None:
+                with open(file_path, encoding='utf-8') as f:
+                    source = f.read()
+
+            # Parse with tree-sitter
+            if self._parser is None:
+                errors.append("Kotlin parser not initialized")
+                return ParseResult(
+                    chunks=chunks,
+                    language=self.language,
+                    total_chunks=0,
+                    parse_time=time.time() - start_time,
+                    errors=errors,
+                    warnings=warnings,
+                    metadata={"file_path": str(file_path)}
+                )
+
+            tree = self._parser.parse(bytes(source, 'utf8'))
+
+            # Extract semantic units
+            chunks = self._extract_chunks(tree.root_node, source, file_path)
+
+            logger.debug(f"Extracted {len(chunks)} chunks from {file_path}")
+
+        except Exception as e:
+            error_msg = f"Failed to parse Kotlin file {file_path}: {e}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+        return ParseResult(
+            chunks=chunks,
+            language=self.language,
+            total_chunks=len(chunks),
+            parse_time=time.time() - start_time,
+            errors=errors,
+            warnings=warnings,
+            metadata={"file_path": str(file_path)}
         )
 
     def _extract_chunks(
@@ -159,9 +275,7 @@ class KotlinParser(TreeSitterParserBase):
                 return ""
 
             query = self._language.query("""
-                (package_header
-                    (identifier) @package_name
-                ) @package_def
+                (package_header) @package_def
             """)
 
             matches = query.matches(tree_node)
@@ -170,9 +284,14 @@ class KotlinParser(TreeSitterParserBase):
                 return ""
 
             for pattern_index, captures in matches:
-                if "package_name" in captures:
-                    package_node = captures["package_name"][0]
-                    return self._get_node_text(package_node, source)
+                if "package_def" in captures:
+                    package_node = captures["package_def"][0]
+                    # Extract package name from the full header text
+                    package_text = self._get_node_text(package_node, source)
+                    # Simple extraction: remove "package " prefix
+                    if package_text.startswith("package "):
+                        return package_text[8:].strip()
+                    return package_text
 
             return ""
         except Exception as e:
@@ -194,20 +313,23 @@ class KotlinParser(TreeSitterParserBase):
                 return chunks
 
             query = self._language.query("""
-                (class_declaration
-                    name: (type_identifier) @class_name
-                ) @class_def
+                (class_declaration) @class_def
             """)
 
             matches = query.matches(tree_node)
 
             for pattern_index, captures in matches:
-                if "class_def" not in captures or "class_name" not in captures:
+                if "class_def" not in captures:
                     continue
 
                 class_node = captures["class_def"][0]
-                class_name_node = captures["class_name"][0]
-                class_name = self._get_node_text(class_name_node, source)
+                
+                # Extract class name from the node children
+                class_name = "UnnamedClass"
+                for child in class_node.children:
+                    if child.type in ["simple_identifier", "type_identifier", "identifier"]:
+                        class_name = self._get_node_text(child, source)
+                        break
 
                 qualified_name = class_name
                 if package_name:
@@ -244,7 +366,7 @@ class KotlinParser(TreeSitterParserBase):
                     (modifiers
                         (class_modifier "data")
                     )
-                    name: (type_identifier) @data_class_name
+                    name: (simple_identifier) @data_class_name
                 ) @data_class_def
             """)
 
@@ -290,7 +412,7 @@ class KotlinParser(TreeSitterParserBase):
 
             query = self._language.query("""
                 (object_declaration
-                    name: (type_identifier) @object_name
+                    name: (simple_identifier) @object_name
                 ) @object_def
             """)
 
@@ -336,7 +458,7 @@ class KotlinParser(TreeSitterParserBase):
 
             query = self._language.query("""
                 (companion_object
-                    name: (type_identifier)? @companion_name
+                    name: (simple_identifier)? @companion_name
                 ) @companion_def
             """)
 
@@ -391,20 +513,28 @@ class KotlinParser(TreeSitterParserBase):
                 return chunks
 
             query = self._language.query("""
-                (interface_declaration
-                    name: (type_identifier) @interface_name
-                ) @interface_def
+                (class_declaration) @interface_def
             """)
 
             matches = query.matches(tree_node)
 
             for pattern_index, captures in matches:
-                if "interface_def" not in captures or "interface_name" not in captures:
+                if "interface_def" not in captures:
                     continue
 
                 interface_node = captures["interface_def"][0]
-                interface_name_node = captures["interface_name"][0]
-                interface_name = self._get_node_text(interface_name_node, source)
+                
+                # Check if this is actually an interface by looking for "interface" keyword
+                interface_text = self._get_node_text(interface_node, source)
+                if not interface_text.strip().startswith("interface "):
+                    continue
+                
+                # Extract interface name
+                interface_name = "UnnamedInterface"
+                for child in interface_node.children:
+                    if child.type in ["simple_identifier", "type_identifier", "identifier"]:
+                        interface_name = self._get_node_text(child, source)
+                        break
 
                 qualified_name = interface_name
                 if package_name:
@@ -437,20 +567,28 @@ class KotlinParser(TreeSitterParserBase):
                 return chunks
 
             query = self._language.query("""
-                (enum_class_declaration
-                    name: (type_identifier) @enum_name
-                ) @enum_def
+                (class_declaration) @enum_def
             """)
 
             matches = query.matches(tree_node)
 
             for pattern_index, captures in matches:
-                if "enum_def" not in captures or "enum_name" not in captures:
+                if "enum_def" not in captures:
                     continue
 
                 enum_node = captures["enum_def"][0]
-                enum_name_node = captures["enum_name"][0]
-                enum_name = self._get_node_text(enum_name_node, source)
+                
+                # Check if this is actually an enum class by looking for "enum class" keywords
+                enum_text = self._get_node_text(enum_node, source)
+                if not "enum class" in enum_text.strip()[:20]:  # Check first 20 chars
+                    continue
+                
+                # Extract enum name
+                enum_name = "UnnamedEnum"
+                for child in enum_node.children:
+                    if child.type in ["simple_identifier", "type_identifier", "identifier"]:
+                        enum_name = self._get_node_text(child, source)
+                        break
 
                 qualified_name = enum_name
                 if package_name:
@@ -483,67 +621,26 @@ class KotlinParser(TreeSitterParserBase):
                 return chunks
 
             query = self._language.query("""
-                (function_declaration
-                    name: (simple_identifier) @function_name
-                ) @function_def
-
-                (primary_constructor
-                    (class_parameter_list) @constructor_params
-                ) @constructor_def
-
-                ; Extension functions
-                (function_declaration
-                    receiver: (function_type) @receiver_type
-                    name: (simple_identifier) @extension_name
-                ) @extension_def
+                (function_declaration) @function_def
             """)
 
             matches = query.matches(tree_node)
 
             for pattern_index, captures in matches:
-                function_node = None
-                function_name = None
-                is_constructor = False
-                is_extension = False
-
-                # Handle regular functions
-                if "function_def" in captures and "function_name" in captures:
-                    function_node = captures["function_def"][0]
-                    function_name_node = captures["function_name"][0]
-                    function_name = self._get_node_text(function_name_node, source)
-
-                # Handle constructors
-                elif "constructor_def" in captures:
-                    function_node = captures["constructor_def"][0]
-                    function_name = "constructor"
-                    is_constructor = True
-
-                # Handle extension functions
-                elif "extension_def" in captures and "extension_name" in captures:
-                    function_node = captures["extension_def"][0]
-                    function_name_node = captures["extension_name"][0]
-                    function_name = self._get_node_text(function_name_node, source)
-                    is_extension = True
-
-                if not function_node or not function_name:
+                if "function_def" not in captures:
                     continue
+                    
+                function_node = captures["function_def"][0]
+                
+                # Extract function name from the node children
+                function_name = "unnamed_function"
+                for child in function_node.children:
+                    if child.type in ["simple_identifier", "identifier"]:
+                        function_name = self._get_node_text(child, source)
+                        break
 
-                # Check if we want this chunk type
-                if (
-                    is_constructor
-                    and ChunkType.CONSTRUCTOR not in self._config.chunk_types
-                ):
-                    continue
-                if (
-                    is_extension
-                    and ChunkType.EXTENSION_FUNCTION not in self._config.chunk_types
-                ):
-                    continue
-                if (
-                    not is_constructor
-                    and not is_extension
-                    and ChunkType.METHOD not in self._config.chunk_types
-                ):
+                # Check if we want this chunk type  
+                if ChunkType.FUNCTION not in self._config.chunk_types:
                     continue
 
                 # Find containing class/object
@@ -557,12 +654,7 @@ class KotlinParser(TreeSitterParserBase):
                 else:
                     qualified_name = function_name
 
-                if is_constructor:
-                    chunk_type = ChunkType.CONSTRUCTOR
-                elif is_extension:
-                    chunk_type = ChunkType.EXTENSION_FUNCTION
-                else:
-                    chunk_type = ChunkType.METHOD
+                chunk_type = ChunkType.FUNCTION
 
                 chunk = self._create_chunk(
                     function_node, source, file_path, chunk_type,
@@ -642,8 +734,48 @@ class KotlinParser(TreeSitterParserBase):
                 # Find the class/object name
                 for i in range(current.child_count):
                     child = current.child(i)
-                    if child and child.type == "type_identifier":
+                    if child and child.type in ["simple_identifier", "type_identifier"]:
                         return self._get_node_text(child, source)
             current = current.parent
 
         return None
+
+    def _create_chunk(
+        self, node: TSNode, source: str, file_path: Path, 
+        chunk_type: ChunkType, symbol: str, display_name: str, parent: str = None
+    ) -> dict[str, Any]:
+        """Create a chunk dictionary from a tree-sitter node.
+        
+        Args:
+            node: Tree-sitter node
+            source: Source code string
+            file_path: Path to source file
+            chunk_type: Type of chunk
+            symbol: Symbol name
+            display_name: Display name for the chunk
+            parent: Optional parent class/object name
+            
+        Returns:
+            Chunk dictionary
+        """
+        content = self._get_node_text(node, source)
+        
+        chunk = {
+            "symbol": symbol,
+            "start_line": node.start_point[0] + 1,
+            "end_line": node.end_point[0] + 1,
+            "code": content,
+            "chunk_type": chunk_type.value,
+            "language": "kotlin",
+            "path": str(file_path),
+            "name": symbol,
+            "display_name": display_name,
+            "content": content,
+            "start_byte": node.start_byte,
+            "end_byte": node.end_byte,
+        }
+        
+        if parent:
+            chunk["parent"] = parent
+            
+        return chunk

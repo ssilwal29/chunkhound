@@ -1,5 +1,6 @@
 """Bash language parser provider implementation for ChunkHound using tree-sitter."""
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -7,25 +8,32 @@ from loguru import logger
 
 from core.types import ChunkType
 from core.types import Language as CoreLanguage
-from interfaces.language_parser import ParseConfig
-from providers.parsing.base_parser import TreeSitterParserBase
+from interfaces.language_parser import ParseConfig, ParseResult
 
 try:
-    from tree_sitter import Language, Parser
+    from tree_sitter import Language as TSLanguage
     from tree_sitter import Node as TSNode
+    from tree_sitter import Parser as TSParser
     from tree_sitter_language_pack import get_language, get_parser
-
-    TREE_SITTER_AVAILABLE = True
+    BASH_AVAILABLE = True
 except ImportError:
-    TREE_SITTER_AVAILABLE = False
-    TSNode = None
-    Language = None
-    Parser = None
+    BASH_AVAILABLE = False
     get_language = None
     get_parser = None
+    TSLanguage = None
+    TSParser = None
+    TSNode = None
+
+# Try direct import as fallback
+try:
+    import tree_sitter_bash as ts_bash
+    BASH_DIRECT_AVAILABLE = True
+except ImportError:
+    BASH_DIRECT_AVAILABLE = False
+    ts_bash = None
 
 
-class BashParser(TreeSitterParserBase):
+class BashParser:
     """Bash language parser using tree-sitter."""
 
     def __init__(self, config: ParseConfig | None = None):
@@ -34,34 +42,12 @@ class BashParser(TreeSitterParserBase):
         Args:
             config: Optional parse configuration
         """
-        super().__init__(CoreLanguage.BASH, config)
+        self._language = None
+        self._parser = None
+        self._initialized = False
 
-    def _initialize(self) -> bool:
-        """Initialize the Bash parser using tree-sitter-bash package.
-
-        Returns:
-            True if initialization successful, False otherwise
-        """
-        if self._initialized:
-            return True
-
-        if not TREE_SITTER_AVAILABLE or get_language is None:
-            logger.error("Bash tree-sitter support not available")
-            return False
-
-        try:
-            self._language = get_language("bash")
-            self._parser = get_parser("bash")
-            self._initialized = True
-            logger.debug("Bash parser initialized successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to initialize Bash parser: {e}")
-            return False
-
-    def _get_default_config(self) -> ParseConfig:
-        """Get default configuration for Bash parser."""
-        return ParseConfig(
+        # Default configuration for Bash-specific chunk types
+        self._config = config or ParseConfig(
             language=CoreLanguage.BASH,
             chunk_types={ChunkType.FUNCTION, ChunkType.BLOCK},
             max_chunk_size=8000,
@@ -71,6 +57,138 @@ class BashParser(TreeSitterParserBase):
             include_docstrings=True,
             max_depth=10,
             use_cache=True,
+        )
+
+        # Initialize parser - crash if dependencies unavailable
+        if not BASH_AVAILABLE and not BASH_DIRECT_AVAILABLE:
+            raise ImportError("Bash tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-bash")
+        
+        if not self._initialize():
+            raise RuntimeError("Failed to initialize Bash parser")
+
+    def _initialize(self) -> bool:
+        """Initialize the Bash parser.
+
+        Returns:
+            True if initialization successful, False otherwise
+        """
+        if self._initialized:
+            return True
+
+        if not BASH_AVAILABLE and not BASH_DIRECT_AVAILABLE:
+            logger.error("Bash tree-sitter support not available")
+            return False
+
+        # Try direct import first
+        try:
+            if BASH_DIRECT_AVAILABLE and ts_bash and TSLanguage and TSParser:
+                self._language = TSLanguage(ts_bash.language())
+                self._parser = TSParser(self._language)
+                self._initialized = True
+                logger.debug("Bash parser initialized successfully (direct)")
+                return True
+        except Exception as e:
+            logger.debug(f"Direct Bash parser initialization failed: {e}")
+
+        # Fallback to language pack
+        try:
+            if BASH_AVAILABLE and get_language and get_parser:
+                self._language = get_language('bash')
+                self._parser = get_parser('bash')
+                self._initialized = True
+                logger.debug("Bash parser initialized successfully (language pack)")
+                return True
+        except Exception as e:
+            logger.error(f"Bash parser language pack initialization failed: {e}")
+
+        logger.error("Bash parser initialization failed with both methods")
+        return False
+
+    @property
+    def language(self) -> CoreLanguage:
+        """Programming language this parser handles."""
+        return CoreLanguage.BASH
+
+    @property
+    def supported_chunk_types(self) -> set[ChunkType]:
+        """Chunk types this parser can extract."""
+        return self._config.chunk_types
+
+    @property
+    def is_available(self) -> bool:
+        """Whether the parser is available and ready to use."""
+        return (BASH_AVAILABLE or BASH_DIRECT_AVAILABLE) and self._initialized
+
+    def _get_node_text(self, node: TSNode, source: str) -> str:
+        """Extract text content from a tree-sitter node."""
+        return source[node.start_byte:node.end_byte]
+
+    def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
+        """Parse a Bash file and extract semantic chunks.
+
+        Args:
+            file_path: Path to Bash file
+            source: Optional source code string
+
+        Returns:
+            ParseResult with extracted chunks and metadata
+        """
+        start_time = time.time()
+        chunks = []
+        errors = []
+        warnings = []
+
+        if not self.is_available:
+            errors.append("Bash parser not available")
+            return ParseResult(
+                chunks=chunks,
+                language=self.language,
+                total_chunks=0,
+                parse_time=time.time() - start_time,
+                errors=errors,
+                warnings=warnings,
+                metadata={"file_path": str(file_path)}
+            )
+
+        try:
+            # Read source if not provided
+            if source is None:
+                with open(file_path, encoding='utf-8') as f:
+                    source = f.read()
+
+            # Parse with tree-sitter
+            if self._parser is None:
+                errors.append("Bash parser not initialized")
+                return ParseResult(
+                    chunks=chunks,
+                    language=self.language,
+                    total_chunks=0,
+                    parse_time=time.time() - start_time,
+                    errors=errors,
+                    warnings=warnings,
+                    metadata={"file_path": str(file_path)}
+                )
+
+            tree = self._parser.parse(bytes(source, 'utf8'))
+
+            # Extract semantic units
+            chunks = self._extract_chunks(tree.root_node, source, file_path)
+
+            logger.debug(f"Extracted {len(chunks)} chunks from {file_path}")
+
+        except Exception as e:
+            error_msg = f"Failed to parse Bash file {file_path}: {e}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+        return ParseResult(
+            chunks=chunks,
+            language=self.language,
+            total_chunks=len(chunks),
+            parse_time=time.time() - start_time,
+            errors=errors,
+            warnings=warnings,
+            metadata={"file_path": str(file_path)}
         )
 
     def _extract_chunks(
@@ -166,14 +284,18 @@ class BashParser(TreeSitterParserBase):
             if self._should_include_chunk(chunk_text, ChunkType.FUNCTION):
                 chunks.append(
                     {
+                        "symbol": function_name,
                         "name": function_name,
-                        "chunk_type": ChunkType.FUNCTION,
+                        "display_name": function_name,
+                        "chunk_type": ChunkType.FUNCTION.value,
                         "start_line": start_line,
                         "end_line": end_line,
-                        "file_path": str(file_path),
-                        "language": self.language.value,
-                        "line_count": end_line - start_line + 1,
+                        "path": str(file_path),
+                        "language": "bash",
+                        "content": chunk_text,
                         "code": chunk_text,
+                        "start_byte": node.start_byte,
+                        "end_byte": node.end_byte,
                     }
                 )
 
@@ -205,6 +327,7 @@ class BashParser(TreeSitterParserBase):
             if self._should_include_chunk(chunk_text, ChunkType.BLOCK):
                 chunks.append(
                     {
+                        "symbol": f"{structure_type}_{start_line}",
                         "name": f"{structure_type}_{start_line}",
                         "chunk_type": ChunkType.BLOCK,
                         "start_line": start_line,
@@ -243,6 +366,7 @@ class BashParser(TreeSitterParserBase):
             if self._should_include_chunk(chunk_text, ChunkType.BLOCK):
                 chunks.append(
                     {
+                        "symbol": f"command_{start_line}",
                         "name": f"command_{start_line}",
                         "chunk_type": ChunkType.BLOCK,
                         "start_line": start_line,
@@ -287,6 +411,7 @@ class BashParser(TreeSitterParserBase):
 
                 chunks.append(
                     {
+                        "symbol": f"var_{var_name}_{start_line}",
                         "name": f"var_{var_name}_{start_line}",
                         "chunk_type": ChunkType.BLOCK,
                         "start_line": start_line,
@@ -346,6 +471,7 @@ class BashParser(TreeSitterParserBase):
                 # Found a function-like pattern
                 chunks.append(
                     {
+                        "symbol": f"function_{i + 1}",
                         "name": f"function_{i + 1}",
                         "chunk_type": ChunkType.FUNCTION,
                         "start_line": i + 1,

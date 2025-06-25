@@ -26,6 +26,26 @@ class TextParser:
         """
         self._language = language
 
+    @property
+    def language(self) -> Language:
+        """Programming language this parser handles."""
+        return self._language
+
+    @property
+    def is_available(self) -> bool:
+        """Whether the parser is available and ready to use."""
+        return True  # Text parsers are always available
+
+    @property
+    def supported_chunk_types(self) -> set[ChunkType]:
+        """Chunk types this parser can extract."""
+        if self._language == Language.JSON:
+            return {ChunkType.OBJECT, ChunkType.ARRAY, ChunkType.KEY_VALUE}
+        elif self._language == Language.YAML:
+            return {ChunkType.DOCUMENT, ChunkType.BLOCK, ChunkType.KEY_VALUE}
+        else:  # TEXT
+            return {ChunkType.BLOCK}
+
     def parse_file(self, file_path: Path) -> list[dict[str, Any]]:
         """Parse a text-based file and extract searchable chunks.
 

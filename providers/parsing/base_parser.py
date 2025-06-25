@@ -41,9 +41,12 @@ class TreeSitterParserBase:
         self._initialized = False
         self._config = config or self._get_default_config()
 
-        # Initialize if available
-        if TREE_SITTER_AVAILABLE:
-            self._initialize()
+        # Initialize parser - crash if dependencies unavailable  
+        if not TREE_SITTER_AVAILABLE:
+            raise ImportError(f"{language.value} tree-sitter dependencies not available - install tree-sitter-language-pack")
+        
+        if not self._initialize():
+            raise RuntimeError(f"Failed to initialize {language.value} parser")
 
     def _get_default_config(self) -> ParseConfig:
         """Get default configuration for this parser. Override in subclasses."""

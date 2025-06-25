@@ -147,7 +147,7 @@ class TomlParser(TreeSitterParserBase):
                     table_text = self._get_node_text(current_node, source_lines)
 
                     tables.append({
-                        "name": table_header,
+                        "symbol": table_header,
                         "chunk_type": ChunkType.TABLE,
                         "start_line": start_line,
                         "end_line": end_line,
@@ -179,7 +179,7 @@ class TomlParser(TreeSitterParserBase):
                     table_text = self._get_node_text(current_node, source_lines)
 
                     tables.append({
-                        "name": table_header,
+                        "symbol": table_header,
                         "chunk_type": ChunkType.TABLE,
                         "start_line": start_line,
                         "end_line": end_line,
@@ -231,7 +231,7 @@ class TomlParser(TreeSitterParserBase):
                     kv_text = self._get_node_text(current_node, source_lines)
 
                     key_values.append({
-                        "name": full_key,
+                        "symbol": full_key,
                         "chunk_type": ChunkType.KEY_VALUE,
                         "start_line": start_line,
                         "end_line": end_line,
@@ -285,7 +285,7 @@ class TomlParser(TreeSitterParserBase):
                             break
 
                 arrays.append({
-                    "name": parent_key,
+                    "symbol": parent_key,
                     "chunk_type": ChunkType.ARRAY,
                     "start_line": start_line,
                     "end_line": end_line,
@@ -331,7 +331,7 @@ class TomlParser(TreeSitterParserBase):
                             break
 
                 blocks.append({
-                    "name": parent_key,
+                    "symbol": parent_key,
                     "chunk_type": ChunkType.BLOCK,
                     "start_line": start_line,
                     "end_line": end_line,

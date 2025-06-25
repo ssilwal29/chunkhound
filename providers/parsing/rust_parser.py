@@ -24,6 +24,14 @@ except ImportError:
     TSParser = None
     TSNode = None
 
+# Try direct import as fallback
+try:
+    import tree_sitter_rust as ts_rust
+    RUST_DIRECT_AVAILABLE = True
+except ImportError:
+    RUST_DIRECT_AVAILABLE = False
+    ts_rust = None
+
 
 class RustParser:
     """Rust language parser using tree-sitter."""
@@ -62,9 +70,12 @@ class RustParser:
             use_cache=True
         )
 
-        # Initialize if available
-        if RUST_AVAILABLE:
-            self._initialize()
+        # Initialize parser - crash if dependencies unavailable
+        if not RUST_AVAILABLE and not RUST_DIRECT_AVAILABLE:
+            raise ImportError("Rust tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-rust")
+        
+        if not self._initialize():
+            raise RuntimeError("Failed to initialize Rust parser")
 
     def _initialize(self) -> bool:
         """Initialize the Rust parser.
@@ -75,23 +86,34 @@ class RustParser:
         if self._initialized:
             return True
 
-        if not RUST_AVAILABLE:
+        if not RUST_AVAILABLE and not RUST_DIRECT_AVAILABLE:
             logger.error("Rust tree-sitter support not available")
             return False
 
+        # Try direct import first
         try:
-            if get_language and get_parser:
+            if RUST_DIRECT_AVAILABLE and ts_rust and TSLanguage and TSParser:
+                self._language = TSLanguage(ts_rust.language())
+                self._parser = TSParser(self._language)
+                self._initialized = True
+                logger.debug("Rust parser initialized successfully (direct)")
+                return True
+        except Exception as e:
+            logger.debug(f"Direct Rust parser initialization failed: {e}")
+
+        # Fallback to language pack
+        try:
+            if RUST_AVAILABLE and get_language and get_parser:
                 self._language = get_language('rust')
                 self._parser = get_parser('rust')
                 self._initialized = True
-                logger.debug("Rust parser initialized successfully")
+                logger.debug("Rust parser initialized successfully (language pack)")
                 return True
-            else:
-                logger.error("Rust parser dependencies not available")
-                return False
         except Exception as e:
-            logger.error(f"Failed to initialize Rust parser: {e}")
-            return False
+            logger.error(f"Rust parser language pack initialization failed: {e}")
+
+        logger.error("Rust parser initialization failed with both methods")
+        return False
 
     @property
     def language(self) -> CoreLanguage:
@@ -106,7 +128,7 @@ class RustParser:
     @property
     def is_available(self) -> bool:
         """Whether the parser is available and ready to use."""
-        return RUST_AVAILABLE and self._initialized
+        return (RUST_AVAILABLE or RUST_DIRECT_AVAILABLE) and self._initialized
 
     def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
         """Parse a Rust file and extract semantic chunks.

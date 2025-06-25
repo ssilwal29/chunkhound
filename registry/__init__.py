@@ -25,6 +25,7 @@ try:
     from providers.parsing.java_parser import JavaParser
     from providers.parsing.javascript_parser import JavaScriptParser
     from providers.parsing.kotlin_parser import KotlinParser
+    from providers.parsing.makefile_parser import MakefileParser
     from providers.parsing.markdown_parser import MarkdownParser
     from providers.parsing.matlab_parser import MatlabParser
 
@@ -64,6 +65,7 @@ except ImportError:
         from providers.parsing.java_parser import JavaParser
         from providers.parsing.javascript_parser import JavaScriptParser
         from providers.parsing.kotlin_parser import KotlinParser
+        from providers.parsing.makefile_parser import MakefileParser
         from providers.parsing.markdown_parser import MarkdownParser
         from providers.parsing.matlab_parser import MatlabParser
 
@@ -289,146 +291,90 @@ class ProviderRegistry:
         # This ensures the provider gets the correct configuration parameters
 
         # Language parsers
-        try:
-            self.register_language_parser(Language.PYTHON, PythonParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Python parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Python parser: {e}")
+        self.register_language_parser(Language.PYTHON, PythonParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Python parser")
 
-        try:
-            self.register_language_parser(Language.JAVA, JavaParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Java parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Java parser: {e}")
+        self.register_language_parser(Language.JAVA, JavaParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Java parser")
 
-        try:
-            self.register_language_parser(Language.JAVASCRIPT, JavaScriptParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered JavaScript parser")
-        except Exception as e:
-            logger.warning(f"Failed to register JavaScript parser: {e}")
+        self.register_language_parser(Language.JAVASCRIPT, JavaScriptParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered JavaScript parser")
 
-        try:
-            self.register_language_parser(Language.JSX, JavaScriptParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered JSX parser")
-        except Exception as e:
-            logger.warning(f"Failed to register JSX parser: {e}")
+        self.register_language_parser(Language.JSX, JavaScriptParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered JSX parser")
 
-        try:
-            self.register_language_parser(Language.TYPESCRIPT, TypeScriptParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered TypeScript parser")
-        except Exception as e:
-            logger.warning(f"Failed to register TypeScript parser: {e}")
+        self.register_language_parser(Language.TYPESCRIPT, TypeScriptParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered TypeScript parser")
 
-        try:
-            self.register_language_parser(Language.TSX, TypeScriptParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered TSX parser")
-        except Exception as e:
-            logger.warning(f"Failed to register TSX parser: {e}")
+        self.register_language_parser(Language.TSX, TypeScriptParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered TSX parser")
 
-        try:
-            self.register_language_parser(Language.CSHARP, CSharpParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered C# parser")
-        except Exception as e:
-            logger.warning(f"Failed to register C# parser: {e}")
+        self.register_language_parser(Language.CSHARP, CSharpParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered C# parser")
 
-        try:
-            self.register_language_parser(Language.GROOVY, GroovyParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Groovy parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Groovy parser: {e}")
+        self.register_language_parser(Language.GROOVY, GroovyParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Groovy parser")
 
-        try:
-            self.register_language_parser(Language.KOTLIN, KotlinParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Kotlin parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Kotlin parser: {e}")
+        self.register_language_parser(Language.KOTLIN, KotlinParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Kotlin parser")
 
-        try:
-            self.register_language_parser(Language.GO, GoParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Go parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Go parser: {e}")
+        self.register_language_parser(Language.GO, GoParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Go parser")
 
-        try:
-            self.register_language_parser(Language.BASH, BashParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Bash parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Bash parser: {e}")
+        self.register_language_parser(Language.BASH, BashParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Bash parser")
 
-        try:
-            self.register_language_parser(Language.C, CParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered C parser")
-        except Exception as e:
-            logger.warning(f"Failed to register C parser: {e}")
+        self.register_language_parser(Language.C, CParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered C parser")
 
-        try:
-            self.register_language_parser(Language.CPP, CppParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered C++ parser")
-        except Exception as e:
-            logger.warning(f"Failed to register C++ parser: {e}")
+        self.register_language_parser(Language.CPP, CppParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered C++ parser")
 
-        try:
-            self.register_language_parser(Language.MATLAB, MatlabParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Matlab parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Matlab parser: {e}")
+        self.register_language_parser(Language.MATLAB, MatlabParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Matlab parser")
 
-        try:
-            self.register_language_parser(Language.RUST, RustParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Rust parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Rust parser: {e}")
+        self.register_language_parser(Language.MAKEFILE, MakefileParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Makefile parser")
 
-        try:
-            self.register_language_parser(Language.MARKDOWN, MarkdownParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Markdown parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Markdown parser: {e}")
+        self.register_language_parser(Language.RUST, RustParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Rust parser")
+
+        self.register_language_parser(Language.MARKDOWN, MarkdownParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Markdown parser")
 
         # Register text-based parsers
-        try:
-            self.register_language_parser(Language.JSON, JsonParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered JSON parser")
-        except Exception as e:
-            logger.warning(f"Failed to register JSON parser: {e}")
+        self.register_language_parser(Language.JSON, JsonParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered JSON parser")
 
-        try:
-            self.register_language_parser(Language.YAML, YamlParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered YAML parser")
-        except Exception as e:
-            logger.warning(f"Failed to register YAML parser: {e}")
+        self.register_language_parser(Language.YAML, YamlParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered YAML parser")
 
-        try:
-            self.register_language_parser(Language.TOML, TomlParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered TOML parser")
-        except Exception as e:
-            logger.warning(f"Failed to register TOML parser: {e}")
+        self.register_language_parser(Language.TOML, TomlParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered TOML parser")
 
-        try:
-            self.register_language_parser(Language.TEXT, PlainTextParser)
-            if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                logger.debug("Registered Plain Text parser")
-        except Exception as e:
-            logger.warning(f"Failed to register Plain Text parser: {e}")
+        self.register_language_parser(Language.TEXT, PlainTextParser)
+        if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+            logger.debug("Registered Plain Text parser")
 
     def _register_embedding_provider(self) -> None:
         """Register the appropriate embedding provider based on configuration."""

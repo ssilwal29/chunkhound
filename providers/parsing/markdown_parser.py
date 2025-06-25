@@ -15,13 +15,21 @@ try:
     from tree_sitter import Language as TSLanguage
     from tree_sitter import Node as TSNode
     from tree_sitter import Parser as TSParser
-    MARKDOWN_AVAILABLE = True
+    MARKDOWN_DIRECT_AVAILABLE = True
 except ImportError:
-    MARKDOWN_AVAILABLE = False
+    MARKDOWN_DIRECT_AVAILABLE = False
     tsmarkdown = None
     TSLanguage = None
     TSParser = None
     TSNode = None
+
+try:
+    from tree_sitter_language_pack import get_language, get_parser
+    MARKDOWN_PACK_AVAILABLE = True
+except ImportError:
+    MARKDOWN_PACK_AVAILABLE = False
+    get_language = None
+    get_parser = None
 
 
 class MarkdownParser:
@@ -59,9 +67,12 @@ class MarkdownParser:
             use_cache=True
         )
 
-        # Initialize if available
-        if MARKDOWN_AVAILABLE:
-            self._initialize()
+        # Initialize parser - crash if dependencies unavailable
+        if not MARKDOWN_DIRECT_AVAILABLE and not MARKDOWN_PACK_AVAILABLE:
+            raise ImportError("Markdown tree-sitter dependencies not available - install tree-sitter-language-pack")
+        
+        if not self._initialize():
+            raise RuntimeError("Failed to initialize Markdown parser")
 
     def _initialize(self) -> bool:
         """Initialize the Markdown parser.
@@ -72,23 +83,34 @@ class MarkdownParser:
         if self._initialized:
             return True
 
-        if not MARKDOWN_AVAILABLE:
+        if not MARKDOWN_DIRECT_AVAILABLE and not MARKDOWN_PACK_AVAILABLE:
             logger.error("Markdown tree-sitter support not available")
             return False
 
+        # Try direct import first
         try:
-            if tsmarkdown and TSLanguage and TSParser:
+            if MARKDOWN_DIRECT_AVAILABLE and tsmarkdown and TSLanguage and TSParser:
                 self._language = TSLanguage(tsmarkdown.language())
                 self._parser = TSParser(self._language)
                 self._initialized = True
-                logger.debug("Markdown parser initialized successfully")
+                logger.debug("Markdown parser initialized successfully (direct)")
                 return True
-            else:
-                logger.error("Markdown parser dependencies not available")
-                return False
         except Exception as e:
-            logger.error(f"Failed to initialize Markdown parser: {e}")
-            return False
+            logger.debug(f"Direct Markdown parser initialization failed: {e}")
+
+        # Fallback to language pack
+        try:
+            if MARKDOWN_PACK_AVAILABLE and get_language and get_parser:
+                self._language = get_language('markdown')
+                self._parser = get_parser('markdown')
+                self._initialized = True
+                logger.debug("Markdown parser initialized successfully (language pack)")
+                return True
+        except Exception as e:
+            logger.error(f"Markdown parser language pack initialization failed: {e}")
+
+        logger.error("Markdown parser initialization failed with both methods")
+        return False
 
     @property
     def language(self) -> CoreLanguage:
@@ -103,7 +125,7 @@ class MarkdownParser:
     @property
     def is_available(self) -> bool:
         """Whether the parser is available and ready to use."""
-        return MARKDOWN_AVAILABLE and self._initialized
+        return (MARKDOWN_DIRECT_AVAILABLE or MARKDOWN_PACK_AVAILABLE) and self._initialized
 
     def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
         """Parse a Markdown file and extract semantic chunks.

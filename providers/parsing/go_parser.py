@@ -24,6 +24,14 @@ except ImportError:
     TSParser = None
     TSNode = None
 
+# Try direct import as fallback
+try:
+    import tree_sitter_go as ts_go
+    GO_DIRECT_AVAILABLE = True
+except ImportError:
+    GO_DIRECT_AVAILABLE = False
+    ts_go = None
+
 
 class GoParser:
     """Go language parser using tree-sitter."""
@@ -58,9 +66,12 @@ class GoParser:
             use_cache=True
         )
 
-        # Initialize if available
-        if GO_AVAILABLE:
-            self._initialize()
+        # Initialize parser - crash if dependencies unavailable
+        if not GO_AVAILABLE and not GO_DIRECT_AVAILABLE:
+            raise ImportError("Go tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-go")
+        
+        if not self._initialize():
+            raise RuntimeError("Failed to initialize Go parser")
 
     def _initialize(self) -> bool:
         """Initialize the Go parser.
@@ -71,23 +82,34 @@ class GoParser:
         if self._initialized:
             return True
 
-        if not GO_AVAILABLE:
+        if not GO_AVAILABLE and not GO_DIRECT_AVAILABLE:
             logger.error("Go tree-sitter support not available")
             return False
 
+        # Try direct import first
         try:
-            if get_language and get_parser:
+            if GO_DIRECT_AVAILABLE and ts_go and TSLanguage and TSParser:
+                self._language = TSLanguage(ts_go.language())
+                self._parser = TSParser(self._language)
+                self._initialized = True
+                logger.debug("Go parser initialized successfully (direct)")
+                return True
+        except Exception as e:
+            logger.debug(f"Direct Go parser initialization failed: {e}")
+
+        # Fallback to language pack
+        try:
+            if GO_AVAILABLE and get_language and get_parser:
                 self._language = get_language('go')
                 self._parser = get_parser('go')
                 self._initialized = True
-                logger.debug("Go parser initialized successfully")
+                logger.debug("Go parser initialized successfully (language pack)")
                 return True
-            else:
-                logger.error("Go parser dependencies not available")
-                return False
         except Exception as e:
-            logger.error(f"Failed to initialize Go parser: {e}")
-            return False
+            logger.error(f"Go parser language pack initialization failed: {e}")
+
+        logger.error("Go parser initialization failed with both methods")
+        return False
 
     @property
     def language(self) -> CoreLanguage:
@@ -102,7 +124,7 @@ class GoParser:
     @property
     def is_available(self) -> bool:
         """Whether the parser is available and ready to use."""
-        return GO_AVAILABLE and self._initialized
+        return (GO_AVAILABLE or GO_DIRECT_AVAILABLE) and self._initialized
 
     def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
         """Parse a Go file and extract semantic chunks.
