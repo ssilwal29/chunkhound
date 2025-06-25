@@ -448,40 +448,40 @@ def limit_response_size(response_data: dict[str, Any], max_tokens: int) -> dict[
 
     # Start with full response and iteratively reduce until under limit
     limited_results = response_data["results"][:]
-    
+
     while limited_results:
         # Create test response with current results
         test_response = {
             "results": limited_results,
             "pagination": response_data["pagination"]
         }
-        
+
         # Estimate token count
         response_text = json.dumps(test_response, default=str)
         token_count = estimate_tokens(response_text)
-        
+
         if token_count <= max_tokens:
             # Update pagination to reflect actual returned results
             actual_count = len(limited_results)
             updated_pagination = response_data["pagination"].copy()
             updated_pagination["page_size"] = actual_count
             updated_pagination["has_more"] = (
-                updated_pagination.get("has_more", False) or 
+                updated_pagination.get("has_more", False) or
                 actual_count < len(response_data["results"])
             )
             if actual_count < len(response_data["results"]):
                 updated_pagination["next_offset"] = updated_pagination.get("offset", 0) + actual_count
-            
+
             return {
                 "results": limited_results,
                 "pagination": updated_pagination
             }
-        
+
         # Remove results from the end to reduce size
         # Remove in chunks for efficiency
         reduction_size = max(1, len(limited_results) // 4)
         limited_results = limited_results[:-reduction_size]
-    
+
     # If even empty results exceed token limit, return minimal response
     return {
         "results": [],
@@ -518,6 +518,7 @@ async def call_tool(
         page_size = max(1, min(arguments.get("page_size", 10), 100))
         offset = max(0, arguments.get("offset", 0))
         max_tokens = max(1000, min(arguments.get("max_response_tokens", 20000), 25000))
+        path_filter = arguments.get("path")
 
         async def _execute_regex_search():
             # Check connection instead of forcing reconnection (fixes race condition)
@@ -526,18 +527,18 @@ async def call_tool(
                     print("Database not connected, reconnecting before regex search", file=sys.stderr)
                 _database.reconnect()
 
-            results, pagination = _database.search_regex(pattern=pattern, page_size=page_size, offset=offset)
-            
+            results, pagination = _database.search_regex(pattern=pattern, page_size=page_size, offset=offset, path_filter=path_filter)
+
             # Format response with pagination metadata
             response_data = {
                 "results": results,
                 "pagination": pagination
             }
-            
+
             # Apply response size limiting
             limited_response = limit_response_size(response_data, max_tokens)
             response_text = json.dumps(limited_response, default=str)
-            
+
             # Final safety check - ensure we never exceed MCP limit
             if estimate_tokens(response_text) > 25000:
                 # Emergency fallback - return minimal response
@@ -570,6 +571,7 @@ async def call_tool(
         provider = arguments.get("provider", "openai")
         model = arguments.get("model", "text-embedding-3-small")
         threshold = arguments.get("threshold")
+        path_filter = arguments.get("path")
 
         if not _embedding_manager or not _embedding_manager.list_providers():
             raise Exception("No embedding providers available. Set OPENAI_API_KEY to enable semantic search.")
@@ -598,19 +600,20 @@ async def call_tool(
                     model=model,
                     page_size=page_size,
                     offset=offset,
-                    threshold=threshold
+                    threshold=threshold,
+                    path_filter=path_filter
                 )
-                
+
                 # Format response with pagination metadata
                 response_data = {
                     "results": results,
                     "pagination": pagination
                 }
-                
+
                 # Apply response size limiting
                 limited_response = limit_response_size(response_data, max_tokens)
                 response_text = json.dumps(limited_response, default=str)
-                
+
                 # Final safety check - ensure we never exceed MCP limit
                 if estimate_tokens(response_text) > 25000:
                     # Emergency fallback - return minimal response
@@ -691,7 +694,8 @@ async def list_tools() -> list[types.Tool]:
                     "pattern": {"type": "string", "description": "Regular expression pattern to search for"},
                     "page_size": {"type": "integer", "description": "Number of results per page (1-100)", "default": 10},
                     "offset": {"type": "integer", "description": "Starting position for pagination", "default": 0},
-                    "max_response_tokens": {"type": "integer", "description": "Maximum response size in tokens (1000-25000)", "default": 20000}
+                    "max_response_tokens": {"type": "integer", "description": "Maximum response size in tokens (1000-25000)", "default": 20000},
+                    "path": {"type": "string", "description": "Optional relative path to limit search scope (e.g., 'src/', 'tests/')"}
                 },
                 "required": ["pattern"]
             }
@@ -708,7 +712,8 @@ async def list_tools() -> list[types.Tool]:
                     "max_response_tokens": {"type": "integer", "description": "Maximum response size in tokens (1000-25000)", "default": 20000},
                     "provider": {"type": "string", "description": "Embedding provider to use", "default": "openai"},
                     "model": {"type": "string", "description": "Embedding model to use", "default": "text-embedding-3-small"},
-                    "threshold": {"type": "number", "description": "Distance threshold for filtering results (optional)"}
+                    "threshold": {"type": "number", "description": "Distance threshold for filtering results (optional)"},
+                    "path": {"type": "string", "description": "Optional relative path to limit search scope (e.g., 'src/', 'tests/')"}
                 },
                 "required": ["query"]
             }

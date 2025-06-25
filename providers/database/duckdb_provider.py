@@ -471,10 +471,10 @@ class DuckDBProvider:
         try:
             # Get the correct table name for the dimensions
             table_name = self._get_table_name_for_dimensions(dims)
-            
+
             # Ensure the table exists before creating the index
             self._ensure_embedding_table_exists(dims)
-            
+
             index_name = f"hnsw_{provider}_{model}_{dims}_{metric}".replace("-", "_").replace(".", "_")
 
             # Create HNSW index using VSS extension on the dimension-specific table
@@ -525,7 +525,7 @@ class DuckDBProvider:
             for result in results:
                 index_name = result[0]
                 table_name = result[1]
-                
+
                 # Handle different index naming patterns
                 if index_name.startswith('hnsw_'):
                     # Parse custom index name: hnsw_{provider}_{model}_{dims}_{metric}
@@ -556,7 +556,7 @@ class DuckDBProvider:
                             })
                         except ValueError:
                             logger.warning(f"Could not parse dims from custom index name: {index_name}")
-                            
+
                 elif index_name.startswith('idx_hnsw_'):
                     # Parse standard index name: idx_hnsw_{dims}
                     # Extract dims from table name: embeddings_{dims}
@@ -1347,10 +1347,10 @@ class DuckDBProvider:
                 # This check verifies the index exists for this dimension
                 existing_indexes = self.get_existing_vector_indexes()
                 dims = first_embedding['dims']
-                
+
                 # Check if any index exists for this dimension (standard or custom)
                 index_exists = any(idx['dims'] == dims for idx in existing_indexes)
-                
+
                 if not index_exists:
                     logger.warning(f"🔍 No HNSW index found for {dims}D embeddings, creating one now")
                     # Create the missing HNSW index for semantic search functionality
@@ -1450,6 +1450,45 @@ class DuckDBProvider:
             logger.error(f"Failed to delete embeddings for chunk {chunk_id}: {e}")
             raise
 
+    def _validate_and_normalize_path_filter(self, path_filter: str | None) -> str | None:
+        """Validate and normalize path filter for security and consistency.
+        
+        Args:
+            path_filter: User-provided path filter
+            
+        Returns:
+            Normalized path filter safe for SQL LIKE queries, or None
+            
+        Raises:
+            ValueError: If path contains dangerous patterns
+        """
+        if path_filter is None:
+            return None
+
+        # Remove leading/trailing whitespace
+        normalized = path_filter.strip()
+
+        if not normalized:
+            return None
+
+        # Security checks - prevent directory traversal
+        dangerous_patterns = ['..', '~', '*', '?', '[', ']', '\0', '\n', '\r']
+        for pattern in dangerous_patterns:
+            if pattern in normalized:
+                raise ValueError(f"Path filter contains forbidden pattern: {pattern}")
+
+        # Normalize path separators to forward slashes
+        normalized = normalized.replace('\\', '/')
+
+        # Remove leading slashes to ensure relative paths
+        normalized = normalized.lstrip('/')
+
+        # Ensure trailing slash for directory patterns
+        if normalized and not normalized.endswith('/') and '.' not in normalized.split('/')[-1]:
+            normalized += '/'
+
+        return normalized
+
     def search_semantic(
         self,
         query_embedding: list[float],
@@ -1457,13 +1496,17 @@ class DuckDBProvider:
         model: str,
         page_size: int = 10,
         offset: int = 0,
-        threshold: float | None = None
+        threshold: float | None = None,
+        path_filter: str | None = None
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform semantic vector search using HNSW index with multi-dimension support."""
         if self.connection is None:
             raise RuntimeError("No database connection")
 
         try:
+            # Validate and normalize path filter
+            normalized_path = self._validate_and_normalize_path_filter(path_filter)
+
             # Detect dimensions from query embedding
             query_dims = len(query_embedding)
             table_name = self._get_table_name_for_dimensions(query_dims)
@@ -1498,6 +1541,10 @@ class DuckDBProvider:
                 params.append(query_embedding)
                 params.append(threshold)
 
+            if normalized_path is not None:
+                query += " AND f.path LIKE ?"
+                params.append(f"%/{normalized_path}%")
+
             # Get total count for pagination
             # Build count query separately to avoid string replacement issues
             count_query = f"""
@@ -1507,20 +1554,24 @@ class DuckDBProvider:
                 JOIN files f ON c.file_id = f.id
                 WHERE e.provider = ? AND e.model = ?
             """
-            
+
             count_params = [provider, model]
-            
+
             if threshold is not None:
                 count_query += f" AND array_cosine_similarity(e.embedding, ?::FLOAT[{query_dims}]) >= ?"
                 count_params.extend([query_embedding, threshold])
-            
+
+            if normalized_path is not None:
+                count_query += " AND f.path LIKE ?"
+                count_params.append(f"%/{normalized_path}%")
+
             total_count = self.connection.execute(count_query, count_params).fetchone()[0]
-            
+
             query += " ORDER BY similarity DESC LIMIT ? OFFSET ?"
             params.extend([page_size, offset])
 
             results = self.connection.execute(query, params).fetchall()
-            
+
             result_list = [
                 {
                     "chunk_id": result[0],
@@ -1535,7 +1586,7 @@ class DuckDBProvider:
                 }
                 for result in results
             ]
-            
+
             pagination = {
                 "offset": offset,
                 "page_size": page_size,
@@ -1543,28 +1594,43 @@ class DuckDBProvider:
                 "next_offset": offset + page_size if offset + page_size < total_count else None,
                 "total": total_count
             }
-            
+
             return result_list, pagination
 
         except Exception as e:
             logger.error(f"Failed to perform semantic search: {e}")
             return [], {"offset": offset, "page_size": page_size, "has_more": False, "total": 0}
 
-    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0, path_filter: str | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform regex search on code content."""
         if self.connection is None:
             raise RuntimeError("No database connection")
 
         try:
+            # Validate and normalize path filter
+            normalized_path = self._validate_and_normalize_path_filter(path_filter)
+
+            # Build base WHERE clause
+            where_conditions = ["regexp_matches(c.code, ?)"]
+            params = [pattern]
+
+            if normalized_path is not None:
+                where_conditions.append("f.path LIKE ?")
+                params.append(f"%/{normalized_path}%")
+
+            where_clause = " AND ".join(where_conditions)
+
             # Get total count for pagination
-            total_count = self.connection.execute("""
+            count_query = f"""
                 SELECT COUNT(*)
                 FROM chunks c
                 JOIN files f ON c.file_id = f.id
-                WHERE regexp_matches(c.code, ?)
-            """, [pattern]).fetchone()[0]
-            
-            results = self.connection.execute("""
+                WHERE {where_clause}
+            """
+            total_count = self.connection.execute(count_query, params).fetchone()[0]
+
+            # Get results
+            results_query = f"""
                 SELECT
                     c.id as chunk_id,
                     c.symbol,
@@ -1576,10 +1642,11 @@ class DuckDBProvider:
                     f.language
                 FROM chunks c
                 JOIN files f ON c.file_id = f.id
-                WHERE regexp_matches(c.code, ?)
+                WHERE {where_clause}
                 ORDER BY f.path, c.start_line
                 LIMIT ? OFFSET ?
-            """, [pattern, page_size, offset]).fetchall()
+            """
+            results = self.connection.execute(results_query, params + [page_size, offset]).fetchall()
 
 
 
@@ -1596,7 +1663,7 @@ class DuckDBProvider:
                 }
                 for result in results
             ]
-            
+
             pagination = {
                 "offset": offset,
                 "page_size": page_size,
@@ -1604,7 +1671,7 @@ class DuckDBProvider:
                 "next_offset": offset + page_size if offset + page_size < total_count else None,
                 "total": total_count
             }
-            
+
             return result_list, pagination
 
         except Exception as e:

@@ -37,7 +37,8 @@ class SearchService(BaseService):
         offset: int = 0,
         threshold: float | None = None,
         provider: str | None = None,
-        model: str | None = None
+        model: str | None = None,
+        path_filter: str | None = None
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform semantic search using vector similarity.
 
@@ -48,6 +49,7 @@ class SearchService(BaseService):
             threshold: Optional similarity threshold to filter results
             provider: Optional specific embedding provider to use
             model: Optional specific model to use
+            path_filter: Optional relative path to limit search scope (e.g., 'src/', 'tests/')
 
         Returns:
             Tuple of (results, pagination_metadata)
@@ -76,7 +78,8 @@ class SearchService(BaseService):
                 model=search_model,
                 page_size=page_size,
                 offset=offset,
-                threshold=threshold
+                threshold=threshold,
+                path_filter=path_filter
             )
 
             # Enhance results with additional metadata
@@ -92,13 +95,14 @@ class SearchService(BaseService):
             logger.error(f"Semantic search failed: {e}")
             raise
 
-    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0, path_filter: str | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform regex search on code content.
 
         Args:
             pattern: Regular expression pattern to search for
             page_size: Number of results per page
             offset: Starting position for pagination
+            path_filter: Optional relative path to limit search scope (e.g., 'src/', 'tests/')
 
         Returns:
             Tuple of (results, pagination_metadata)
@@ -107,7 +111,7 @@ class SearchService(BaseService):
             logger.debug(f"Performing regex search for pattern: '{pattern}'")
 
             # Perform regex search
-            results, pagination = self._db.search_regex(pattern=pattern, page_size=page_size, offset=offset)
+            results, pagination = self._db.search_regex(pattern=pattern, page_size=page_size, offset=offset, path_filter=path_filter)
 
             # Enhance results with additional metadata
             enhanced_results = []
@@ -178,7 +182,7 @@ class SearchService(BaseService):
                 semantic_weight=semantic_weight,
                 limit=page_size
             )
-            
+
             # Create combined pagination metadata
             combined_pagination = {
                 "offset": offset,

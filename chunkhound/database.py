@@ -145,7 +145,7 @@ class Database:
     # Search Methods - Delegate to SearchService
     # =============================================================================
 
-    def search_semantic(self, query_vector: list[float], provider: str, model: str, page_size: int = 10, offset: int = 0, threshold: float | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def search_semantic(self, query_vector: list[float], provider: str, model: str, page_size: int = 10, offset: int = 0, threshold: float | None = None, path_filter: str | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform semantic similarity search.
 
         Delegates to provider for actual search.
@@ -156,15 +156,16 @@ class Database:
             model=model,
             page_size=page_size,
             offset=offset,
-            threshold=threshold
+            threshold=threshold,
+            path_filter=path_filter
         )
 
-    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0, path_filter: str | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Search code chunks using regex pattern.
 
-        Delegates to SearchService for actual search.
+        Delegates to provider for actual search.
         """
-        return self._search_service.search_regex(pattern=pattern, page_size=page_size, offset=offset)
+        return self._provider.search_regex(pattern=pattern, page_size=page_size, offset=offset, path_filter=path_filter)
 
     # =============================================================================
     # Database Operations - Delegate to Provider

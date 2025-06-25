@@ -130,17 +130,33 @@ class DatabaseProvider(Protocol):
         model: str,
         page_size: int = 10,
         offset: int = 0,
-        threshold: float | None = None
+        threshold: float | None = None,
+        path_filter: str | None = None
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform semantic vector search.
+        
+        Args:
+            query_embedding: Query embedding vector
+            provider: Embedding provider name
+            model: Embedding model name
+            page_size: Number of results per page
+            offset: Starting position for pagination
+            threshold: Optional similarity threshold
+            path_filter: Optional relative path to limit search scope (e.g., 'src/', 'tests/')
         
         Returns:
             Tuple of (results, pagination_metadata)
         """
         ...
 
-    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0, path_filter: str | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform regex search on code content.
+        
+        Args:
+            pattern: Regular expression pattern to search for
+            page_size: Number of results per page
+            offset: Starting position for pagination
+            path_filter: Optional relative path to limit search scope (e.g., 'src/', 'tests/')
         
         Returns:
             Tuple of (results, pagination_metadata)
