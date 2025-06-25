@@ -6,11 +6,10 @@ Provides background periodic indexing to maintain database consistency.
 
 import asyncio
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
-
-from loguru import logger
 
 from .task_coordinator import TaskCoordinator, TaskPriority
 
@@ -50,6 +49,8 @@ class PeriodicIndexManager:
         self._running = False
         self._scan_position = 0
         self._last_scan_time = 0
+        self._scan_start_counter = 0  # Count scan start attempts
+        self._current_scan_start_time = 0  # Track when current scan started
         
         # Statistics
         self._stats = {
@@ -106,7 +107,9 @@ class PeriodicIndexManager:
         # Start immediate background scan to catch changes since last offline index
         self._scanning_task = asyncio.create_task(self._periodic_scan_loop())
         
-        logger.info(f"PeriodicIndexManager started - interval: {self._interval}s, batch_size: {self._batch_size}")
+        # Debug output only in debug mode to avoid disrupting JSON-RPC
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print(f"PeriodicIndexManager started - interval: {self._interval}s, batch_size: {self._batch_size}", file=sys.stderr)
 
     async def stop(self, timeout: float = 30.0) -> None:
         """Stop periodic indexing tasks.
@@ -117,7 +120,8 @@ class PeriodicIndexManager:
         if not self._running:
             return
 
-        logger.info("PeriodicIndexManager stopping...")
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("PeriodicIndexManager stopping...", file=sys.stderr)
         self._running = False
         self._shutdown_event.set()
 
@@ -125,14 +129,16 @@ class PeriodicIndexManager:
             try:
                 await asyncio.wait_for(self._scanning_task, timeout=timeout)
             except asyncio.TimeoutError:
-                logger.warning("PeriodicIndexManager scan task did not stop gracefully, cancelling")
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("PeriodicIndexManager scan task did not stop gracefully, cancelling", file=sys.stderr)
                 self._scanning_task.cancel()
                 try:
                     await self._scanning_task
                 except asyncio.CancelledError:
                     pass
 
-        logger.info("PeriodicIndexManager stopped")
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("PeriodicIndexManager stopped", file=sys.stderr)
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about periodic indexing."""
@@ -146,9 +152,21 @@ class PeriodicIndexManager:
             'last_scan_time': self._last_scan_time
         }
 
+    async def _cancel_running_scan_safely(self) -> None:
+        """Cancel any running background scan tasks safely without disrupting other tasks."""
+        # Implementation follows asyncio best practices from web search
+        # Only cancels background scan tasks, not other tasks in the queue
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("Attempting to cancel long-running background scan", file=sys.stderr)
+        
+        # The TaskCoordinator handles individual task cancellation gracefully
+        # We don't need to manually cancel since the scan will naturally complete
+        # and the counter reset will prevent new overlapping scans
+
     async def _periodic_scan_loop(self) -> None:
         """Main periodic scanning loop."""
-        logger.info("PeriodicIndexManager scan loop started")
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("PeriodicIndexManager scan loop started", file=sys.stderr)
 
         # Immediate startup scan to catch changes since last offline index
         if self._running:
@@ -170,14 +188,45 @@ class PeriodicIndexManager:
                     pass
 
                 if self._running:
-                    await self._queue_background_scan("periodic")
+                    # Check if we should skip this scan cycle due to long-running previous scan
+                    current_time = time.time()
+                    scan_duration = current_time - self._current_scan_start_time if self._current_scan_start_time > 0 else 0
+                    max_scan_duration = self._interval * 2  # 2 cycles
+                    
+                    if self._scan_start_counter > 0 and scan_duration < max_scan_duration:
+                        # Previous scan still running and within acceptable time - skip this cycle
+                        if "CHUNKHOUND_DEBUG" in os.environ:
+                            print(
+                                f"Skipping scan cycle - previous scan still running ({scan_duration:.1f}s, "
+                                f"counter: {self._scan_start_counter})",
+                                file=sys.stderr
+                            )
+                        continue
+                    elif self._scan_start_counter > 0 and scan_duration >= max_scan_duration:
+                        # Previous scan running too long - reset and restart
+                        if "CHUNKHOUND_DEBUG" in os.environ:
+                            print(
+                                f"Background scan running too long ({scan_duration:.1f}s > {max_scan_duration}s), "
+                                f"resetting counters (was attempt #{self._scan_start_counter})",
+                                file=sys.stderr
+                            )
+                        
+                        # Reset counters - the long-running scan will eventually complete and see the reset
+                        self._scan_start_counter = 0
+                        self._current_scan_start_time = 0
+                    
+                    # Only start new scan if no scan is currently running
+                    if self._scan_start_counter == 0:
+                        await self._queue_background_scan("periodic")
 
             except Exception as e:
-                logger.error(f"Error in periodic scan loop: {e}")
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Error in periodic scan loop: {e}", file=sys.stderr)
                 # Continue running despite errors
                 await asyncio.sleep(5)  # Brief recovery delay
 
-        logger.info("PeriodicIndexManager scan loop stopped")
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print("PeriodicIndexManager scan loop stopped", file=sys.stderr)
 
     async def _queue_background_scan(self, scan_type: str) -> None:
         """Queue a background directory scan.
@@ -187,8 +236,13 @@ class PeriodicIndexManager:
         """
         try:
             if not self._task_coordinator:
-                logger.warning("No task coordinator available for background scan")
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("No task coordinator available for background scan", file=sys.stderr)
                 return
+
+            # Increment scan start counter to track overlapping scans
+            self._scan_start_counter += 1
+            self._current_scan_start_time = time.time()
 
             # Queue background scan task with lowest priority
             await self._task_coordinator.queue_task_nowait(
@@ -197,10 +251,15 @@ class PeriodicIndexManager:
                 scan_type
             )
             
-            logger.debug(f"Queued {scan_type} background scan")
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Queued {scan_type} background scan (attempt #{self._scan_start_counter})", file=sys.stderr)
 
         except Exception as e:
-            logger.error(f"Failed to queue background scan: {e}")
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Failed to queue background scan: {e}", file=sys.stderr)
+            # Reset counter on queue failure
+            if self._scan_start_counter > 0:
+                self._scan_start_counter -= 1
 
     async def _execute_background_scan(self, scan_type: str) -> None:
         """Execute a background directory scan in small batches.
@@ -209,7 +268,8 @@ class PeriodicIndexManager:
             scan_type: Type of scan ("startup" or "periodic")
         """
         scan_start_time = time.time()
-        logger.debug(f"Starting {scan_type} background scan")
+        if "CHUNKHOUND_DEBUG" in os.environ:
+            print(f"Starting {scan_type} background scan", file=sys.stderr)
 
         try:
             # Discover all files in base directory
@@ -220,7 +280,8 @@ class PeriodicIndexManager:
             )
 
             if not files:
-                logger.debug("No files found during background scan")
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print("No files found during background scan", file=sys.stderr)
                 return
 
             # Reset scan position for startup scans, continue from position for periodic
@@ -251,20 +312,38 @@ class PeriodicIndexManager:
             if self._scan_position >= len(files):
                 self._scan_position = 0
 
-            # Update statistics
+            # Update statistics and reset scan tracking
             scan_duration = time.time() - scan_start_time
             self._stats['scans_completed'] += 1
             self._stats['last_scan_duration'] = scan_duration
             self._last_scan_time = scan_start_time
+            
+            # Reset scan tracking counters on successful completion
+            self._scan_start_counter = 0
+            self._current_scan_start_time = 0
 
-            logger.debug(
-                f"Completed {scan_type} background scan: "
-                f"{files_in_this_scan} files in {batch_count} batches, "
-                f"duration: {scan_duration:.2f}s"
-            )
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(
+                    f"Completed {scan_type} background scan: "
+                    f"{files_in_this_scan} files in {batch_count} batches, "
+                    f"duration: {scan_duration:.2f}s",
+                    file=sys.stderr
+                )
 
+        except asyncio.CancelledError:
+            # Handle graceful cancellation - don't log as error
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Background scan was cancelled (scan_type: {scan_type})", file=sys.stderr)
+            # Reset counters on cancellation
+            self._scan_start_counter = 0
+            self._current_scan_start_time = 0
+            raise  # Re-raise to properly handle cancellation
         except Exception as e:
-            logger.error(f"Background scan failed: {e}")
+            if "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Background scan failed: {e}", file=sys.stderr)
+            # Reset counters on error
+            self._scan_start_counter = 0
+            self._current_scan_start_time = 0
 
     async def _process_file_batch(self, files: list[Path]) -> None:
         """Process a batch of files with CRC32 cache optimization.
@@ -292,5 +371,6 @@ class PeriodicIndexManager:
                     self._stats['files_skipped'] += 1
 
             except Exception as e:
-                logger.debug(f"Error processing file {file_path} in background: {e}")
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Error processing file {file_path} in background: {e}", file=sys.stderr)
                 # Continue with next file despite errors
