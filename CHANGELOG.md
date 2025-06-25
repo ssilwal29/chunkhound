@@ -8,23 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Extensive language support: Rust, Go, C++, C, Kotlin, Groovy, Bash, TOML, Makefile, and Matlab
-- Registry-based parser architecture for better extensibility
-- Task coordinator for improved MCP search responsiveness
-- PyInstaller compatibility with multiprocessing support
-- Comprehensive IDE integration documentation
+- 10 new language parsers: Rust, Go, C++, C, Kotlin, Groovy, Bash, TOML, Makefile, Matlab
+- Search pagination with response size limits
+- Registry-based parser architecture
+- MCP search task coordinator
+- Test coverage for file modification tracking
 
 ### Changed
-- Refactored parser system to use registry pattern exclusively
-- Improved embedding performance with token-aware batching
-- Enhanced code quality with better type annotations
-- Optimized embedding service configuration with higher defaults
-- Simplified progress tracking for embedding operations
+- Parser system refactored to registry pattern
+- Centralized language support in Language enum
+- Optimized embedding performance with token-aware batching
+- Enhanced PyInstaller compatibility
 
 ### Fixed
+- Parser error handling and registry integration
+- OpenAI token limit handling
 - PyInstaller module path resolution
-- OpenAI token limit handling with improved error recovery
-- Embedding generation batch operations performance
 
 ## [1.2.3] - 2025-06-23
 
