@@ -45,15 +45,15 @@ except ImportError:
     # Alternative imports when running from different contexts
     try:
         # Try absolute imports from project root
-        import sys
         import os
+        import sys
         from pathlib import Path
-        
+
         # Add project root to path
         project_root = Path(__file__).parent.parent
         if str(project_root) not in sys.path:
             sys.path.insert(0, str(project_root))
-        
+
         from providers.database.duckdb_provider import DuckDBProvider
         from providers.embeddings.openai_provider import OpenAIEmbeddingProvider
         from providers.parsing.bash_parser import BashParser
@@ -72,7 +72,11 @@ except ImportError:
         # Import language parsers
         from providers.parsing.python_parser import PythonParser
         from providers.parsing.rust_parser import RustParser
-        from providers.parsing.text_parser import JsonParser, PlainTextParser, YamlParser
+        from providers.parsing.text_parser import (
+            JsonParser,
+            PlainTextParser,
+            YamlParser,
+        )
         from providers.parsing.toml_parser import TomlParser
         from providers.parsing.typescript_parser import TypeScriptParser
 

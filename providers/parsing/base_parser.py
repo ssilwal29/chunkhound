@@ -41,10 +41,10 @@ class TreeSitterParserBase:
         self._initialized = False
         self._config = config or self._get_default_config()
 
-        # Initialize parser - crash if dependencies unavailable  
+        # Initialize parser - crash if dependencies unavailable
         if not TREE_SITTER_AVAILABLE:
             raise ImportError(f"{language.value} tree-sitter dependencies not available - install tree-sitter-language-pack")
-        
+
         if not self._initialize():
             raise RuntimeError(f"Failed to initialize {language.value} parser")
 

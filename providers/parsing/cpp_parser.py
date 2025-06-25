@@ -70,7 +70,7 @@ class CppParser:
         # Initialize parser - crash if dependencies unavailable
         if not CPP_AVAILABLE and not CPP_DIRECT_AVAILABLE:
             raise ImportError("C++ tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-cpp")
-        
+
         if not self._initialize():
             raise RuntimeError("Failed to initialize C++ parser")
 
@@ -656,7 +656,7 @@ class CppParser:
         return chunks
 
     def _create_chunk(
-        self, node: TSNode, source: str, file_path: Path, 
+        self, node: TSNode, source: str, file_path: Path,
         chunk_type: ChunkType, symbol: str, display_name: str
     ) -> dict[str, Any]:
         """Create a chunk dictionary from a tree-sitter node.
@@ -673,7 +673,7 @@ class CppParser:
             Chunk dictionary
         """
         content = self._get_node_text(node, source)
-        
+
         return {
             "symbol": symbol,
             "start_line": node.start_point[0] + 1,

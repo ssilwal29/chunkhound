@@ -73,7 +73,7 @@ class RustParser:
         # Initialize parser - crash if dependencies unavailable
         if not RUST_AVAILABLE and not RUST_DIRECT_AVAILABLE:
             raise ImportError("Rust tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-rust")
-        
+
         if not self._initialize():
             raise RuntimeError("Failed to initialize Rust parser")
 

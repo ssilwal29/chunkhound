@@ -62,7 +62,7 @@ class BashParser:
         # Initialize parser - crash if dependencies unavailable
         if not BASH_AVAILABLE and not BASH_DIRECT_AVAILABLE:
             raise ImportError("Bash tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-bash")
-        
+
         if not self._initialize():
             raise RuntimeError("Failed to initialize Bash parser")
 

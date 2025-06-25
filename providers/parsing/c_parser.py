@@ -69,7 +69,7 @@ class CParser:
         # Initialize parser - crash if dependencies unavailable
         if not C_AVAILABLE and not C_DIRECT_AVAILABLE:
             raise ImportError("C tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-c")
-        
+
         if not self._initialize():
             raise RuntimeError("Failed to initialize C parser")
 
@@ -528,7 +528,7 @@ class CParser:
         return chunks
 
     def _create_chunk(
-        self, node: TSNode, source: str, file_path: Path, 
+        self, node: TSNode, source: str, file_path: Path,
         chunk_type: ChunkType, symbol: str, display_name: str
     ) -> dict[str, Any]:
         """Create a chunk dictionary from a tree-sitter node.
@@ -545,7 +545,7 @@ class CParser:
             Chunk dictionary
         """
         content = self._get_node_text(node, source)
-        
+
         return {
             "symbol": symbol,
             "start_line": node.start_point[0] + 1,

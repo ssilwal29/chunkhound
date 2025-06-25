@@ -69,7 +69,7 @@ class KotlinParser:
         # Initialize parser - crash if dependencies unavailable
         if not KOTLIN_AVAILABLE and not KOTLIN_DIRECT_AVAILABLE:
             raise ImportError("Kotlin tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-kotlin")
-        
+
         if not self._initialize():
             raise RuntimeError("Failed to initialize Kotlin parser")
 
@@ -323,7 +323,7 @@ class KotlinParser:
                     continue
 
                 class_node = captures["class_def"][0]
-                
+
                 # Extract class name from the node children
                 class_name = "UnnamedClass"
                 for child in class_node.children:
@@ -523,12 +523,12 @@ class KotlinParser:
                     continue
 
                 interface_node = captures["interface_def"][0]
-                
+
                 # Check if this is actually an interface by looking for "interface" keyword
                 interface_text = self._get_node_text(interface_node, source)
                 if not interface_text.strip().startswith("interface "):
                     continue
-                
+
                 # Extract interface name
                 interface_name = "UnnamedInterface"
                 for child in interface_node.children:
@@ -577,12 +577,12 @@ class KotlinParser:
                     continue
 
                 enum_node = captures["enum_def"][0]
-                
+
                 # Check if this is actually an enum class by looking for "enum class" keywords
                 enum_text = self._get_node_text(enum_node, source)
-                if not "enum class" in enum_text.strip()[:20]:  # Check first 20 chars
+                if "enum class" not in enum_text.strip()[:20]:  # Check first 20 chars
                     continue
-                
+
                 # Extract enum name
                 enum_name = "UnnamedEnum"
                 for child in enum_node.children:
@@ -629,9 +629,9 @@ class KotlinParser:
             for pattern_index, captures in matches:
                 if "function_def" not in captures:
                     continue
-                    
+
                 function_node = captures["function_def"][0]
-                
+
                 # Extract function name from the node children
                 function_name = "unnamed_function"
                 for child in function_node.children:
@@ -639,7 +639,7 @@ class KotlinParser:
                         function_name = self._get_node_text(child, source)
                         break
 
-                # Check if we want this chunk type  
+                # Check if we want this chunk type
                 if ChunkType.FUNCTION not in self._config.chunk_types:
                     continue
 
@@ -741,7 +741,7 @@ class KotlinParser:
         return None
 
     def _create_chunk(
-        self, node: TSNode, source: str, file_path: Path, 
+        self, node: TSNode, source: str, file_path: Path,
         chunk_type: ChunkType, symbol: str, display_name: str, parent: str = None
     ) -> dict[str, Any]:
         """Create a chunk dictionary from a tree-sitter node.
@@ -759,7 +759,7 @@ class KotlinParser:
             Chunk dictionary
         """
         content = self._get_node_text(node, source)
-        
+
         chunk = {
             "symbol": symbol,
             "start_line": node.start_point[0] + 1,
@@ -774,8 +774,8 @@ class KotlinParser:
             "start_byte": node.start_byte,
             "end_byte": node.end_byte,
         }
-        
+
         if parent:
             chunk["parent"] = parent
-            
+
         return chunk

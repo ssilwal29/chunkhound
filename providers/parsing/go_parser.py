@@ -69,7 +69,7 @@ class GoParser:
         # Initialize parser - crash if dependencies unavailable
         if not GO_AVAILABLE and not GO_DIRECT_AVAILABLE:
             raise ImportError("Go tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-go")
-        
+
         if not self._initialize():
             raise RuntimeError("Failed to initialize Go parser")
 

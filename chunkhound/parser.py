@@ -6,6 +6,7 @@ from typing import Any
 from loguru import logger
 
 from core.types import Language
+
 from .tree_cache import TreeCache, get_default_cache
 
 
@@ -64,7 +65,7 @@ class CodeParser:
 
         # Get parser from registry
         parser = self._registry.get_language_parser(language)
-        
+
         if not parser:
             raise RuntimeError(f"No parser plugin available for language {language}. "
                              f"File: {file_path}")
@@ -89,18 +90,18 @@ class CodeParser:
         if source_code is None:
             # Read file content if not provided
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, encoding='utf-8') as f:
                     source_code = f.read()
             except Exception as e:
                 logger.error(f"Failed to read file {file_path}: {e}")
                 return None
-        
+
         if self.tree_cache:
             # Use cache for incremental parsing
             cached_tree = self.tree_cache.get(file_path)
             if cached_tree:
                 return cached_tree
-            
+
             # Cache miss - parse and cache
             tree = self._parse_tree_directly(file_path, source_code)
             if tree:
@@ -115,7 +116,7 @@ class CodeParser:
         try:
             from tree_sitter_language_pack import get_parser
             language = Language.from_file_extension(file_path)
-            
+
             # Simple direct parsing without cache
             if language == Language.PYTHON:
                 parser = get_parser('python')
@@ -126,7 +127,7 @@ class CodeParser:
             else:
                 logger.warning(f"No direct parser available for {language}")
                 return None
-            
+
             if parser:
                 return parser.parse(source_code.encode('utf-8'))
             else:
