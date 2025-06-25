@@ -97,16 +97,18 @@ def add_run_subparser(subparsers: Any) -> argparse.ArgumentParser:
         The configured run subparser
     """
     run_parser = subparsers.add_parser(
-        "run",
-        help="Watch directory and index code for search",
-        description="Index and watch a directory for code changes, generating embeddings for semantic search"
+        "index",
+        help="Index directory and optionally watch for changes",
+        description="Scan and index a directory for code search, generating embeddings for semantic search. Optionally watch for file changes and update the index automatically."
     )
 
-    # Required positional argument
+    # Optional positional argument with default to current directory
     run_parser.add_argument(
         "path",
+        nargs="?",
         type=Path,
-        help="Directory path to watch and index",
+        default=Path("."),
+        help="Directory path to index (default: current directory)",
     )
 
     # Add common argument groups

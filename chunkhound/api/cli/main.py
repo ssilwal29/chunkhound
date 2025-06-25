@@ -90,14 +90,14 @@ def validate_args(args: argparse.Namespace) -> None:
     Args:
         args: Parsed arguments to validate
     """
-    if args.command == "run":
+    if args.command == "index":
         if not validate_path(args.path, must_exist=True, must_be_dir=True):
             exit_on_validation_error(f"Invalid path: {args.path}")
 
         if not ensure_database_directory(args.db):
             exit_on_validation_error("Cannot access database directory")
 
-        # Validate provider-specific arguments for run command
+        # Validate provider-specific arguments for index command
         if not args.no_embeddings:
             if args.provider in ['tei', 'bge-in-icl'] and not args.base_url:
                 exit_on_validation_error(f"--base-url required for {args.provider} provider")
@@ -145,15 +145,11 @@ async def async_main() -> None:
 
     # Setup logging for non-MCP commands (MCP already handled above)
     setup_logging(getattr(args, "verbose", False))
-    def validate_args(args: argparse.Namespace) -> None:
-        """Validate arguments."""
-        # Add any validation logic here if needed
-        pass
 
     validate_args(args)
 
     try:
-        if args.command == "run":
+        if args.command == "index":
             # Dynamic import to avoid early chunkhound module loading
             from .commands.run import run_command
             await run_command(args)

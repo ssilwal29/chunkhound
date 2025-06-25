@@ -18,9 +18,10 @@ def create_main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  chunkhound run /path/to/project
-  chunkhound run . --db ./chunks.duckdb
-  chunkhound run /code --include "*.py" --exclude "*/tests/*"
+  chunkhound index
+  chunkhound index /path/to/project
+  chunkhound index . --db ./chunks.duckdb
+  chunkhound index /code --include "*.py" --exclude "*/tests/*"
   chunkhound config list
   chunkhound config add openai --type openai --base-url https://api.openai.com/v1
   chunkhound mcp --db ./chunks.duckdb

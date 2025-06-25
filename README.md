@@ -21,16 +21,16 @@ Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - 
 export OPENAI_API_KEY="sk-your-key-here"
 
 # Index your codebase first (creates chunkhound.db in current directory)
-uv run chunkhound run .
+uv run chunkhound index
 
 # OR: Index and watch for changes (standalone mode)
-uv run chunkhound run . --watch
+uv run chunkhound index --watch
 
 # Start MCP server for AI assistants (automatically watches for file changes)
 uv run chunkhound mcp
 
 # Use custom database location
-uv run chunkhound run . --db /path/to/my-chunks.db
+uv run chunkhound index --db /path/to/my-chunks.db
 uv run chunkhound mcp --db /path/to/my-chunks.db
 ```
 
@@ -361,9 +361,9 @@ ChunkHound operates in two main modes:
    - Responds to search queries via MCP protocol
    - Runs continuously in background
 
-2. **Standalone Mode** (`chunkhound run`)
-   - One-time indexing: `chunkhound run .`
-   - Continuous watching: `chunkhound run . --watch`
+2. **Standalone Mode** (`chunkhound index`)
+   - One-time indexing: `chunkhound index`
+   - Continuous watching: `chunkhound index --watch`
    - Direct CLI usage without MCP integration
 
 ## Configuration
@@ -382,17 +382,17 @@ ChunkHound supports multiple embedding providers:
 **OpenAI (default)**:
 ```bash
 export OPENAI_API_KEY="sk-your-key-here"
-uv run chunkhound run . --provider openai --model text-embedding-3-small
+uv run chunkhound index --provider openai --model text-embedding-3-small
 ```
 
 **OpenAI-compatible servers** (Ollama, LocalAI, etc.):
 ```bash
-uv run chunkhound run . --provider openai-compatible --base-url http://localhost:11434 --model nomic-embed-text
+uv run chunkhound index --provider openai-compatible --base-url http://localhost:11434 --model nomic-embed-text
 ```
 
 **Text Embeddings Inference (TEI)**:
 ```bash
-uv run chunkhound run . --provider tei --base-url http://localhost:8080
+uv run chunkhound index --provider tei --base-url http://localhost:8080
 ```
 
 ### Environment Variables
@@ -415,14 +415,20 @@ export CHUNKHOUND_BASE_URL="http://localhost:11434"
 - **Python**: 3.10+
 - **OpenAI API key**: Required for semantic search (regex works without)
 
-## How It Works
+## How Indexing Works
 
+**Three-tier indexing system for complete coverage:**
+
+1. **Pre-index**: `chunkhound index` - Incrementally updates database by reusing unchanged embeddings. Can be run periodically (cron, CI/CD, server) and the resulting database shared across teams for secure enterprise workflows
+2. **Background scan**: MCP server runs periodic scans every 5 minutes to catch any missed changes  
+3. **Real-time updates**: File system events trigger immediate re-indexing of changed files
+
+**Processing pipeline:**
 1. **Scan** - Finds code files in your project
-2. **Parse** - Extracts functions, classes, methods using tree-sitter
+2. **Parse** - Extracts functions, classes, methods using tree-sitter  
 3. **Index** - Stores code chunks in local DuckDB database
 4. **Embed** - Creates AI embeddings for semantic search
-5. **Watch** - MCP server automatically monitors files for changes and re-indexes
-6. **Search** - AI assistants query via MCP protocol
+5. **Search** - AI assistants query via MCP protocol
 
 *Note: ChunkHound currently uses DuckDB. Support for other local and remote databases is planned.*
 
