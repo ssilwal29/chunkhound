@@ -20,6 +20,7 @@ class TaskPriority(IntEnum):
     HIGH = 1      # Search operations (regex, semantic)
     MEDIUM = 5    # Health checks, stats
     LOW = 10      # File updates, embeddings generation
+    BACKGROUND = 20  # Periodic indexing, maintenance tasks
 
 
 @dataclass
