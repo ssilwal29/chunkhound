@@ -192,3 +192,25 @@ Successfully implemented background periodic indexing with minimal changes:
 
 **Total Implementation Time**: ~45 minutes (under original 75-minute estimate)
 **Code Changes**: Minimal and backward-compatible as designed
+
+## 2025-06-25T19:00:00+03:00 - CRITICAL FIX ✅
+Fixed logging issue that would disrupt JSON-RPC communication:
+
+### Issue Identified
+- Periodic indexer was using `loguru.logger` which would output to stdout/stderr
+- This disrupts MCP JSON-RPC protocol communication
+- Could cause client disconnections or protocol errors
+
+### Fix Applied
+- ✅ Removed all `loguru.logger` imports and calls
+- ✅ Replaced with conditional `print()` statements to `sys.stderr` 
+- ✅ Only outputs debug info when `CHUNKHOUND_DEBUG` environment variable is set
+- ✅ Ensures clean JSON-RPC communication in production
+
+### Anti-Overlap Protection Added
+- ✅ Added scan start counter to track overlapping scans
+- ✅ Cancels scans running longer than 2 cycles (10+ minutes)
+- ✅ Prevents queue swamping from long-running background scans
+- ✅ Follows asyncio best practices for safe task cancellation
+
+**Final Status**: Production-ready with proper MCP protocol compliance
