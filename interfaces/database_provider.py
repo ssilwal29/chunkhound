@@ -128,18 +128,31 @@ class DatabaseProvider(Protocol):
         query_embedding: list[float],
         provider: str,
         model: str,
-        limit: int = 10,
+        page_size: int = 10,
+        offset: int = 0,
         threshold: float | None = None
-    ) -> list[dict[str, Any]]:
-        """Perform semantic vector search."""
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Perform semantic vector search.
+        
+        Returns:
+            Tuple of (results, pagination_metadata)
+        """
         ...
 
-    def search_regex(self, pattern: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Perform regex search on code content."""
+    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Perform regex search on code content.
+        
+        Returns:
+            Tuple of (results, pagination_metadata)
+        """
         ...
 
-    def search_text(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Perform full-text search on code content."""
+    def search_text(self, query: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Perform full-text search on code content.
+        
+        Returns:
+            Tuple of (results, pagination_metadata)
+        """
         ...
 
     # Statistics and Monitoring

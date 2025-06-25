@@ -418,8 +418,8 @@ async def process_file_change(file_path: Path, event_type: str):
 
 
 def estimate_tokens(text: str) -> int:
-    """Estimate token count using simple heuristic (4 chars ≈ 1 token)."""
-    return len(text) // 4
+    """Estimate token count using simple heuristic (3 chars ≈ 1 token for safety)."""
+    return len(text) // 3
 
 
 def truncate_code(code: str, max_chars: int = 1000) -> tuple[str, bool]:
@@ -441,54 +441,57 @@ def truncate_code(code: str, max_chars: int = 1000) -> tuple[str, bool]:
     return '\n'.join(truncated_lines) + '\n...', True
 
 
-def optimize_search_results(results: list[dict[str, Any]], max_tokens: int = 20000) -> tuple[list[dict[str, Any]], bool]:
-    """Optimize search results to fit within token limits."""
-    if not results:
-        return results, False
+def limit_response_size(response_data: dict[str, Any], max_tokens: int) -> dict[str, Any]:
+    """Limit response size to fit within token limits by reducing results."""
+    if not response_data.get("results"):
+        return response_data
 
-    # First pass: create optimized results with previews
-    optimized_results = []
-    total_tokens = 0
-    truncated = False
-
-    for result in results:
-        # Create optimized result copy
-        opt_result = {
-            'chunk_id': result.get('chunk_id'),
-            'name': result.get('name', result.get('symbol', '')),
-            'chunk_type': result.get('chunk_type'),
-            'start_line': result.get('start_line'),
-            'end_line': result.get('end_line'),
-            'file_path': result.get('file_path'),
-            'language': result.get('language'),
-            'line_count': result.get('line_count')
+    # Start with full response and iteratively reduce until under limit
+    limited_results = response_data["results"][:]
+    
+    while limited_results:
+        # Create test response with current results
+        test_response = {
+            "results": limited_results,
+            "pagination": response_data["pagination"]
         }
-
-        # Handle code content with truncation
-        original_code = result.get('content', result.get('code', ''))
-        if original_code:
-            code_preview, is_code_truncated = truncate_code(original_code)
-            opt_result['code'] = code_preview
-            if is_code_truncated:
-                opt_result['is_truncated'] = True
-                truncated = True
-
-        # Estimate tokens for this result
-        result_json = json.dumps(opt_result, ensure_ascii=False)
-        result_tokens = estimate_tokens(result_json)
-
-        # Check if adding this result would exceed limit
-        if total_tokens + result_tokens > max_tokens:
-            # If this is the first result and it's too big, include it anyway
-            if not optimized_results:
-                optimized_results.append(opt_result)
-                truncated = True
-            break
-
-        optimized_results.append(opt_result)
-        total_tokens += result_tokens
-
-    return optimized_results, truncated
+        
+        # Estimate token count
+        response_text = json.dumps(test_response, default=str)
+        token_count = estimate_tokens(response_text)
+        
+        if token_count <= max_tokens:
+            # Update pagination to reflect actual returned results
+            actual_count = len(limited_results)
+            updated_pagination = response_data["pagination"].copy()
+            updated_pagination["page_size"] = actual_count
+            updated_pagination["has_more"] = (
+                updated_pagination.get("has_more", False) or 
+                actual_count < len(response_data["results"])
+            )
+            if actual_count < len(response_data["results"]):
+                updated_pagination["next_offset"] = updated_pagination.get("offset", 0) + actual_count
+            
+            return {
+                "results": limited_results,
+                "pagination": updated_pagination
+            }
+        
+        # Remove results from the end to reduce size
+        # Remove in chunks for efficiency
+        reduction_size = max(1, len(limited_results) // 4)
+        limited_results = limited_results[:-reduction_size]
+    
+    # If even empty results exceed token limit, return minimal response
+    return {
+        "results": [],
+        "pagination": {
+            "offset": response_data["pagination"].get("offset", 0),
+            "page_size": 0,
+            "has_more": len(response_data["results"]) > 0,
+            "total": response_data["pagination"].get("total", 0)
+        }
+    }
 
 
 def convert_to_ndjson(results: list[dict[str, Any]]) -> str:
@@ -512,7 +515,8 @@ async def call_tool(
 
     if name == "search_regex":
         pattern = arguments.get("pattern", "")
-        limit = max(1, min(arguments.get("limit", 10), 100))
+        page_size = max(1, min(arguments.get("page_size", 10), 100))
+        offset = max(0, arguments.get("offset", 0))
         max_tokens = max(1000, min(arguments.get("max_response_tokens", 20000), 25000))
 
         async def _execute_regex_search():
@@ -522,16 +526,31 @@ async def call_tool(
                     print("Database not connected, reconnecting before regex search", file=sys.stderr)
                 _database.reconnect()
 
-            results = _database.search_regex(pattern=pattern, limit=limit)
-            optimized_results, was_truncated = optimize_search_results(results, max_tokens)
-
-            # Add metadata about truncation
-            if was_truncated:
-                response_text = f"# TRUNCATED: Results optimized to fit {max_tokens} token limit\n"
-                response_text += f"# Original results: {len(results)}, Returned: {len(optimized_results)}\n"
-                response_text += convert_to_ndjson(optimized_results)
-            else:
-                response_text = convert_to_ndjson(optimized_results)
+            results, pagination = _database.search_regex(pattern=pattern, page_size=page_size, offset=offset)
+            
+            # Format response with pagination metadata
+            response_data = {
+                "results": results,
+                "pagination": pagination
+            }
+            
+            # Apply response size limiting
+            limited_response = limit_response_size(response_data, max_tokens)
+            response_text = json.dumps(limited_response, default=str)
+            
+            # Final safety check - ensure we never exceed MCP limit
+            if estimate_tokens(response_text) > 25000:
+                # Emergency fallback - return minimal response
+                emergency_response = {
+                    "results": [],
+                    "pagination": {
+                        "offset": offset,
+                        "page_size": 0,
+                        "has_more": True,
+                        "total": limited_response["pagination"].get("total", 0)
+                    }
+                }
+                response_text = json.dumps(emergency_response, default=str)
 
             return [types.TextContent(type="text", text=response_text)]
 
@@ -545,7 +564,8 @@ async def call_tool(
 
     elif name == "search_semantic":
         query = arguments.get("query", "")
-        limit = max(1, min(arguments.get("limit", 10), 100))
+        page_size = max(1, min(arguments.get("page_size", 10), 100))
+        offset = max(0, arguments.get("offset", 0))
         max_tokens = max(1000, min(arguments.get("max_response_tokens", 20000), 25000))
         provider = arguments.get("provider", "openai")
         model = arguments.get("model", "text-embedding-3-small")
@@ -572,23 +592,38 @@ async def call_tool(
                 )
                 query_vector = result.embeddings[0]
 
-                results = _database.search_semantic(
+                results, pagination = _database.search_semantic(
                     query_vector=query_vector,
                     provider=provider,
                     model=model,
-                    limit=limit,
+                    page_size=page_size,
+                    offset=offset,
                     threshold=threshold
                 )
-
-                optimized_results, was_truncated = optimize_search_results(results, max_tokens)
-
-                # Add metadata about truncation
-                if was_truncated:
-                    response_text = f"# TRUNCATED: Results optimized to fit {max_tokens} token limit\n"
-                    response_text += f"# Original results: {len(results)}, Returned: {len(optimized_results)}\n"
-                    response_text += convert_to_ndjson(optimized_results)
-                else:
-                    response_text = convert_to_ndjson(optimized_results)
+                
+                # Format response with pagination metadata
+                response_data = {
+                    "results": results,
+                    "pagination": pagination
+                }
+                
+                # Apply response size limiting
+                limited_response = limit_response_size(response_data, max_tokens)
+                response_text = json.dumps(limited_response, default=str)
+                
+                # Final safety check - ensure we never exceed MCP limit
+                if estimate_tokens(response_text) > 25000:
+                    # Emergency fallback - return minimal response
+                    emergency_response = {
+                        "results": [],
+                        "pagination": {
+                            "offset": offset,
+                            "page_size": 0,
+                            "has_more": True,
+                            "total": limited_response["pagination"].get("total", 0)
+                        }
+                    }
+                    response_text = json.dumps(emergency_response, default=str)
 
                 return [types.TextContent(type="text", text=response_text)]
 
@@ -649,12 +684,13 @@ async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="search_regex",
-            description="Search code chunks using regex patterns. Returns chunk-level matches, not line-level like grep.",
+            description="Search code chunks using regex patterns with pagination support.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "Regular expression pattern to search for"},
-                    "limit": {"type": "integer", "description": "Maximum number of results to return (1-100)", "default": 10},
+                    "page_size": {"type": "integer", "description": "Number of results per page (1-100)", "default": 10},
+                    "offset": {"type": "integer", "description": "Starting position for pagination", "default": 0},
                     "max_response_tokens": {"type": "integer", "description": "Maximum response size in tokens (1000-25000)", "default": 20000}
                 },
                 "required": ["pattern"]
@@ -662,12 +698,13 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="search_semantic",
-            description="Search code using semantic similarity (vector search)",
+            description="Search code using semantic similarity with pagination support.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Natural language search query"},
-                    "limit": {"type": "integer", "description": "Maximum number of results to return (1-100)", "default": 10},
+                    "page_size": {"type": "integer", "description": "Number of results per page (1-100)", "default": 10},
+                    "offset": {"type": "integer", "description": "Starting position for pagination", "default": 0},
                     "max_response_tokens": {"type": "integer", "description": "Maximum response size in tokens (1000-25000)", "default": 20000},
                     "provider": {"type": "string", "description": "Embedding provider to use", "default": "openai"},
                     "model": {"type": "string", "description": "Embedding model to use", "default": "text-embedding-3-small"},

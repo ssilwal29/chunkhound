@@ -469,16 +469,22 @@ class DuckDBProvider:
             raise RuntimeError("No database connection")
 
         try:
+            # Get the correct table name for the dimensions
+            table_name = self._get_table_name_for_dimensions(dims)
+            
+            # Ensure the table exists before creating the index
+            self._ensure_embedding_table_exists(dims)
+            
             index_name = f"hnsw_{provider}_{model}_{dims}_{metric}".replace("-", "_").replace(".", "_")
 
-            # Create HNSW index using VSS extension with FLOAT[1536] schema
+            # Create HNSW index using VSS extension on the dimension-specific table
             self.connection.execute(f"""
-                CREATE INDEX {index_name} ON embeddings
+                CREATE INDEX {index_name} ON {table_name}
                 USING HNSW (embedding)
                 WITH (metric = '{metric}')
             """)
 
-            logger.info(f"HNSW index {index_name} created successfully")
+            logger.info(f"HNSW index {index_name} created successfully on {table_name}")
 
         except Exception as e:
             logger.error(f"Failed to create HNSW index: {e}")
@@ -501,26 +507,28 @@ class DuckDBProvider:
             raise
 
     def get_existing_vector_indexes(self) -> list[dict[str, Any]]:
-        """Get list of existing HNSW vector indexes on embeddings table."""
+        """Get list of existing HNSW vector indexes on all embedding tables."""
         if self.connection is None:
             raise RuntimeError("No database connection")
 
         try:
-            # Query DuckDB system tables for indexes on embeddings table
-            # Filter for HNSW indexes by checking index names that start with 'hnsw_'
+            # Query DuckDB system tables for indexes on all embedding tables
+            # Look for both legacy 'hnsw_' and standard 'idx_hnsw_' index patterns
             results = self.connection.execute("""
                 SELECT index_name, table_name
                 FROM duckdb_indexes()
-                WHERE table_name = 'embeddings'
-                AND index_name LIKE 'hnsw_%'
+                WHERE table_name LIKE 'embeddings_%'
+                AND (index_name LIKE 'hnsw_%' OR index_name LIKE 'idx_hnsw_%')
             """).fetchall()
 
             indexes = []
             for result in results:
                 index_name = result[0]
-                # Parse index name to extract provider/model/dims/metric
-                # Format: hnsw_{provider}_{model}_{dims}_{metric}
+                table_name = result[1]
+                
+                # Handle different index naming patterns
                 if index_name.startswith('hnsw_'):
+                    # Parse custom index name: hnsw_{provider}_{model}_{dims}_{metric}
                     parts = index_name[5:].split('_')  # Remove 'hnsw_' prefix
                     if len(parts) >= 4:
                         # Reconstruct provider/model from parts (they may contain underscores)
@@ -547,7 +555,23 @@ class DuckDBProvider:
                                 'metric': metric
                             })
                         except ValueError:
-                            logger.warning(f"Could not parse dims from index name: {index_name}")
+                            logger.warning(f"Could not parse dims from custom index name: {index_name}")
+                            
+                elif index_name.startswith('idx_hnsw_'):
+                    # Parse standard index name: idx_hnsw_{dims}
+                    # Extract dims from table name: embeddings_{dims}
+                    try:
+                        if table_name.startswith('embeddings_'):
+                            dims = int(table_name[11:])  # Remove 'embeddings_' prefix
+                            indexes.append({
+                                'index_name': index_name,
+                                'provider': 'generic',  # Standard index doesn't specify provider
+                                'model': 'generic',     # Standard index doesn't specify model
+                                'dims': dims,
+                                'metric': 'cosine'      # Default metric for standard indexes
+                            })
+                    except ValueError:
+                        logger.warning(f"Could not parse dims from standard index: {index_name} on {table_name}")
 
             return indexes
 
@@ -1164,23 +1188,23 @@ class DuckDBProvider:
         provider = first_embedding['provider']
         model = first_embedding['model']
 
-        # Use HNSW index optimization for larger batches (Context7 research shows 10-20x improvement)
-        # BATCH THRESHOLD FIX: Force HNSW optimization for all semantic updates (Phase 1)
-        # This fixes 60+ second real-time update delays by ensuring fast path is always used
-        use_hnsw_optimization = True  # Force optimization - TODO: Make context-aware in Phase 2
+        # Use HNSW index optimization only for larger batches (research-based optimal threshold)
+        # Based on benchmarks: small batches (1-10) keep indexes, medium+ batches (≥50) use optimization
+        # This fixes semantic search for new files while maintaining bulk performance
+        use_hnsw_optimization = actual_batch_size >= hnsw_threshold
 
         # Log the optimization decision for debugging
-        if actual_batch_size >= hnsw_threshold:
+        if use_hnsw_optimization:
             logger.debug(f"🚀 Large batch: using HNSW optimization ({actual_batch_size} >= {hnsw_threshold})")
         else:
-            logger.debug(f"🔧 BATCH THRESHOLD FIX: Forcing HNSW optimization for small batch ({actual_batch_size} < {hnsw_threshold}) - Phase 1 active")
+            logger.debug(f"🔍 Small batch: preserving HNSW indexes for semantic search ({actual_batch_size} < {hnsw_threshold})")
 
         try:
             total_inserted = 0
             start_time = time.time()
 
             if use_hnsw_optimization:
-                # CRITICAL OPTIMIZATION: Drop HNSW indexes for bulk operations (Context7 best practice)
+                # CRITICAL OPTIMIZATION: Drop HNSW indexes for bulk operations (research-based best practice)
                 logger.debug(f"🔧 Large batch detected ({actual_batch_size} embeddings >= {hnsw_threshold}), applying HNSW optimization")
 
                 # Extract dims for index management
@@ -1318,6 +1342,25 @@ class DuckDBProvider:
                     logger.error(f"Small VALUES batch failed: {e}")
                     raise
 
+                # Ensure HNSW indexes exist for semantic search after small batch insert
+                # Note: _ensure_embedding_table_exists automatically creates standard HNSW indexes
+                # This check verifies the index exists for this dimension
+                existing_indexes = self.get_existing_vector_indexes()
+                dims = first_embedding['dims']
+                
+                # Check if any index exists for this dimension (standard or custom)
+                index_exists = any(idx['dims'] == dims for idx in existing_indexes)
+                
+                if not index_exists:
+                    logger.warning(f"🔍 No HNSW index found for {dims}D embeddings, creating one now")
+                    # Create the missing HNSW index for semantic search functionality
+                    try:
+                        self.create_vector_index(provider, model, dims, "cosine")
+                        logger.info(f"✅ Created missing HNSW index for {provider}/{model} ({dims}D)")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to create HNSW index for {provider}/{model} ({dims}D): {e}")
+                        # Continue - data is inserted, just no index optimization for search
+
                 # Update progress for small batch completion
                 logger.debug(f"✅ Stored {actual_batch_size} embeddings successfully")
 
@@ -1412,9 +1455,10 @@ class DuckDBProvider:
         query_embedding: list[float],
         provider: str,
         model: str,
-        limit: int = 10,
+        page_size: int = 10,
+        offset: int = 0,
         threshold: float | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform semantic vector search using HNSW index with multi-dimension support."""
         if self.connection is None:
             raise RuntimeError("No database connection")
@@ -1427,7 +1471,7 @@ class DuckDBProvider:
             # Check if table exists for these dimensions
             if not self._table_exists(table_name):
                 logger.warning(f"No embeddings table found for {query_dims} dimensions ({table_name})")
-                return []
+                return [], {"offset": offset, "page_size": page_size, "has_more": False, "total": 0}
 
             # Build query with dimension-specific table
             query = f"""
@@ -1454,12 +1498,30 @@ class DuckDBProvider:
                 params.append(query_embedding)
                 params.append(threshold)
 
-            query += " ORDER BY similarity DESC LIMIT ?"
-            params.append(limit)
+            # Get total count for pagination
+            # Build count query separately to avoid string replacement issues
+            count_query = f"""
+                SELECT COUNT(*)
+                FROM {table_name} e
+                JOIN chunks c ON e.chunk_id = c.id
+                JOIN files f ON c.file_id = f.id
+                WHERE e.provider = ? AND e.model = ?
+            """
+            
+            count_params = [provider, model]
+            
+            if threshold is not None:
+                count_query += f" AND array_cosine_similarity(e.embedding, ?::FLOAT[{query_dims}]) >= ?"
+                count_params.extend([query_embedding, threshold])
+            
+            total_count = self.connection.execute(count_query, count_params).fetchone()[0]
+            
+            query += " ORDER BY similarity DESC LIMIT ? OFFSET ?"
+            params.extend([page_size, offset])
 
             results = self.connection.execute(query, params).fetchall()
-
-            return [
+            
+            result_list = [
                 {
                     "chunk_id": result[0],
                     "symbol": result[1],
@@ -1473,17 +1535,35 @@ class DuckDBProvider:
                 }
                 for result in results
             ]
+            
+            pagination = {
+                "offset": offset,
+                "page_size": page_size,
+                "has_more": offset + page_size < total_count,
+                "next_offset": offset + page_size if offset + page_size < total_count else None,
+                "total": total_count
+            }
+            
+            return result_list, pagination
 
         except Exception as e:
             logger.error(f"Failed to perform semantic search: {e}")
-            return []
+            return [], {"offset": offset, "page_size": page_size, "has_more": False, "total": 0}
 
-    def search_regex(self, pattern: str, limit: int = 10) -> list[dict[str, Any]]:
+    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform regex search on code content."""
         if self.connection is None:
             raise RuntimeError("No database connection")
 
         try:
+            # Get total count for pagination
+            total_count = self.connection.execute("""
+                SELECT COUNT(*)
+                FROM chunks c
+                JOIN files f ON c.file_id = f.id
+                WHERE regexp_matches(c.code, ?)
+            """, [pattern]).fetchone()[0]
+            
             results = self.connection.execute("""
                 SELECT
                     c.id as chunk_id,
@@ -1498,12 +1578,12 @@ class DuckDBProvider:
                 JOIN files f ON c.file_id = f.id
                 WHERE regexp_matches(c.code, ?)
                 ORDER BY f.path, c.start_line
-                LIMIT ?
-            """, [pattern, limit]).fetchall()
+                LIMIT ? OFFSET ?
+            """, [pattern, page_size, offset]).fetchall()
 
 
 
-            return [
+            result_list = [
                 {
                     "chunk_id": result[0],
                     "name": result[1],
@@ -1516,10 +1596,20 @@ class DuckDBProvider:
                 }
                 for result in results
             ]
+            
+            pagination = {
+                "offset": offset,
+                "page_size": page_size,
+                "has_more": offset + page_size < total_count,
+                "next_offset": offset + page_size if offset + page_size < total_count else None,
+                "total": total_count
+            }
+            
+            return result_list, pagination
 
         except Exception as e:
             logger.error(f"Failed to perform regex search: {e}")
-            return []
+            return [], {"offset": offset, "page_size": page_size, "has_more": False, "total": 0}
 
     def search_text(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Perform full-text search on code content."""

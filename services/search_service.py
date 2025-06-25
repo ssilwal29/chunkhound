@@ -33,22 +33,24 @@ class SearchService(BaseService):
     async def search_semantic(
         self,
         query: str,
-        limit: int = 10,
+        page_size: int = 10,
+        offset: int = 0,
         threshold: float | None = None,
         provider: str | None = None,
         model: str | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform semantic search using vector similarity.
 
         Args:
             query: Natural language search query
-            limit: Maximum number of results to return
+            page_size: Number of results per page
+            offset: Starting position for pagination
             threshold: Optional similarity threshold to filter results
             provider: Optional specific embedding provider to use
             model: Optional specific model to use
 
         Returns:
-            List of search results with similarity scores and metadata
+            Tuple of (results, pagination_metadata)
         """
         try:
             if not self._embedding_provider:
@@ -68,11 +70,12 @@ class SearchService(BaseService):
             query_vector = query_results[0]
 
             # Perform vector similarity search
-            results = self._db.search_semantic(
+            results, pagination = self._db.search_semantic(
                 query_embedding=query_vector,
                 provider=search_provider,
                 model=search_model,
-                limit=limit,
+                page_size=page_size,
+                offset=offset,
                 threshold=threshold
             )
 
@@ -83,27 +86,28 @@ class SearchService(BaseService):
                 enhanced_results.append(enhanced_result)
 
             logger.info(f"Semantic search completed: {len(enhanced_results)} results found")
-            return enhanced_results
+            return enhanced_results, pagination
 
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             raise
 
-    def search_regex(self, pattern: str, limit: int = 10) -> list[dict[str, Any]]:
+    def search_regex(self, pattern: str, page_size: int = 10, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform regex search on code content.
 
         Args:
             pattern: Regular expression pattern to search for
-            limit: Maximum number of results to return
+            page_size: Number of results per page
+            offset: Starting position for pagination
 
         Returns:
-            List of search results matching the regex pattern
+            Tuple of (results, pagination_metadata)
         """
         try:
             logger.debug(f"Performing regex search for pattern: '{pattern}'")
 
             # Perform regex search
-            results = self._db.search_regex(pattern=pattern, limit=limit)
+            results, pagination = self._db.search_regex(pattern=pattern, page_size=page_size, offset=offset)
 
             # Enhance results with additional metadata
             enhanced_results = []
@@ -112,7 +116,7 @@ class SearchService(BaseService):
                 enhanced_results.append(enhanced_result)
 
             logger.info(f"Regex search completed: {len(enhanced_results)} results found")
-            return enhanced_results
+            return enhanced_results, pagination
 
         except Exception as e:
             logger.error(f"Regex search failed: {e}")
@@ -122,21 +126,23 @@ class SearchService(BaseService):
         self,
         query: str,
         regex_pattern: str | None = None,
-        limit: int = 10,
+        page_size: int = 10,
+        offset: int = 0,
         semantic_weight: float = 0.7,
         threshold: float | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Perform hybrid search combining semantic and regex results.
 
         Args:
             query: Natural language search query
             regex_pattern: Optional regex pattern to include in search
-            limit: Maximum number of results to return
+            page_size: Number of results per page
+            offset: Starting position for pagination
             semantic_weight: Weight given to semantic results (0.0-1.0)
             threshold: Optional similarity threshold for semantic results
 
         Returns:
-            List of combined and ranked search results
+            Tuple of (results, pagination_metadata)
         """
         try:
             logger.debug(f"Performing hybrid search: query='{query}', pattern='{regex_pattern}'")
@@ -147,31 +153,43 @@ class SearchService(BaseService):
             # Semantic search
             if self._embedding_provider:
                 semantic_task = asyncio.create_task(
-                    self.search_semantic(query, limit=limit*2, threshold=threshold)
+                    self.search_semantic(query, page_size=page_size*2, offset=offset, threshold=threshold)
                 )
                 tasks.append(('semantic', semantic_task))
 
             # Regex search
             if regex_pattern:
                 async def get_regex_results():
-                    return self.search_regex(regex_pattern, limit=limit*2)
+                    return self.search_regex(regex_pattern, page_size=page_size*2, offset=offset)
                 tasks.append(('regex', asyncio.create_task(get_regex_results())))
 
             # Wait for all searches to complete
             results_by_type = {}
+            pagination_data = {}
             for search_type, task in tasks:
-                results_by_type[search_type] = await task
+                results, pagination = await task
+                results_by_type[search_type] = results
+                pagination_data[search_type] = pagination
 
             # Combine and rank results
             combined_results = self._combine_search_results(
                 semantic_results=results_by_type.get('semantic', []),
                 regex_results=results_by_type.get('regex', []),
                 semantic_weight=semantic_weight,
-                limit=limit
+                limit=page_size
             )
+            
+            # Create combined pagination metadata
+            combined_pagination = {
+                "offset": offset,
+                "page_size": page_size,
+                "has_more": len(combined_results) == page_size,
+                "next_offset": offset + page_size if len(combined_results) == page_size else None,
+                "total": None  # Cannot estimate for hybrid search
+            }
 
             logger.info(f"Hybrid search completed: {len(combined_results)} results found")
-            return combined_results
+            return combined_results, combined_pagination
 
         except Exception as e:
             logger.error(f"Hybrid search failed: {e}")
