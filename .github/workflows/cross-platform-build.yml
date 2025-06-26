@@ -411,50 +411,17 @@ jobs:
         run: |
           Write-Host "📋 Generating Windows build information..."
           
-          $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
-          $binaryPath = "dist\chunkhound-optimized\chunkhound-optimized.exe"
-          $archivePath = "dist\${{ matrix.binary_name }}.zip"
+          # Simple build info without complex templating
+          echo "Build completed successfully" > dist\BUILD_INFO_windows.txt
+          echo "Platform: windows" >> dist\BUILD_INFO_windows.txt
+          echo "Binary: chunkhound-optimized.exe" >> dist\BUILD_INFO_windows.txt
           
-          $binarySize = "N/A"
-          $archiveSize = "N/A"
-          
-          if (Test-Path $binaryPath) {
-            $binaryInfo = Get-Item $binaryPath
-            $binarySize = "$([math]::Round($binaryInfo.Length / 1MB, 2)) MB"
-          }
-          
-          if (Test-Path $archivePath) {
-            $archiveInfo = Get-Item $archivePath
-            $archiveSize = "$([math]::Round($archiveInfo.Length / 1MB, 2)) MB"
-          }
-          
-          # Write build info line by line to avoid PowerShell here-string issues
-          "Build Date: $buildDate" | Out-File -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "Platform: ${{ matrix.platform }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "OS: ${{ matrix.os }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "Python Version: ${{ env.PYTHON_VERSION }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "Runner: GitHub Actions" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "Commit: ${{ github.sha }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "Ref: ${{ github.ref }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "Binary Size: $binarySize" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          "Archive Size: $archiveSize" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
-          
-          # Generate checksums for Windows
-          Set-Location dist
-          try {
-            $archiveName = "${{ matrix.binary_name }}.zip"
-            $checksumFile = "${{ matrix.binary_name }}.sha256"
-            
-            $archiveHash = Get-FileHash $archiveName -Algorithm SHA256
-            $binaryHash = Get-FileHash "chunkhound-optimized\chunkhound-optimized.exe" -Algorithm SHA256
-            
-            $archiveHashLine = $archiveHash.Hash.ToLower() + " *" + $archiveName
-            $binaryHashLine = $binaryHash.Hash.ToLower() + " *chunkhound-optimized/chunkhound-optimized.exe"
-            
-            $archiveHashLine | Out-File -FilePath $checksumFile -Encoding ASCII
-            $binaryHashLine | Out-File -Append -FilePath $checksumFile -Encoding ASCII
-          } catch {
-            "Could not generate checksums" | Out-File -FilePath "${{ matrix.binary_name }}.sha256" -Encoding ASCII
+          # Simple checksum generation
+          cd dist
+          if (Test-Path "chunkhound-windows-amd64.zip") {
+            certutil -hashfile "chunkhound-windows-amd64.zip" SHA256 > chunkhound-windows-amd64.sha256
+          } else {
+            echo "No checksum generated" > chunkhound-windows-amd64.sha256
           }
 
       - name: Generate Build Info (Unix)
