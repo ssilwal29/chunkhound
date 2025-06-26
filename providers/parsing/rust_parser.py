@@ -60,6 +60,8 @@ class RustParser:
                 ChunkType.MACRO,
                 ChunkType.VARIABLE,   # Constants and statics
                 ChunkType.TYPE,       # Type aliases
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING,
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -211,6 +213,13 @@ class RustParser:
 
             if ChunkType.TYPE in self._config.chunk_types:
                 chunks.extend(self._extract_types(tree.root_node, source, file_path, module_path))
+
+            # Extract comments and docstrings
+            if ChunkType.COMMENT in self._config.chunk_types:
+                chunks.extend(self._extract_comments(tree.root_node, source, file_path))
+
+            if ChunkType.DOCSTRING in self._config.chunk_types:
+                chunks.extend(self._extract_docstrings(tree.root_node, source, file_path))
 
             logger.debug(f"Extracted {len(chunks)} chunks from {file_path}")
 
@@ -961,3 +970,183 @@ class RustParser:
         except Exception as e:
             logger.error(f"Failed to extract Rust function return type: {e}")
             return None
+
+    def _extract_comments(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract Rust comments (//)."""
+        comment_patterns = [
+            "(line_comment) @comment",
+            "(block_comment) @comment"
+        ]
+        return self._extract_comments_generic(tree_node, source, file_path, comment_patterns)
+
+    def _extract_docstrings(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract Rust documentation comments (/// and /** */)."""
+        chunks = []
+        
+        if self._language is None:
+            return chunks
+            
+        try:
+            # Extract documentation comments (/// and /** ... */)
+            query = self._language.query("""
+                (line_comment) @doc_comment
+                (block_comment) @doc_comment
+            """)
+            matches = query.matches(tree_node)
+            
+            for match in matches:
+                pattern_index, captures = match
+                
+                for capture_name, nodes in captures.items():
+                    for node in nodes:
+                        comment_text = self._get_node_text(node, source)
+                        
+                        # Check if it's a documentation comment (starts with /// or /** or //!)
+                        if (comment_text.strip().startswith("///") or 
+                            comment_text.strip().startswith("//!") or
+                            comment_text.strip().startswith("/*!") or
+                            comment_text.strip().startswith("/**")):
+                            cleaned_text = self._clean_rust_doc_text(comment_text)
+                            symbol = f"doc:{node.start_point[0] + 1}"
+                            
+                            chunk = self._create_chunk(
+                                node=node,
+                                source=source,
+                                file_path=file_path,
+                                chunk_type=ChunkType.DOCSTRING,
+                                name=symbol,
+                                display_name=f"Documentation at line {node.start_point[0] + 1}",
+                                content=cleaned_text
+                            )
+                            
+                            chunks.append(chunk)
+                            
+        except Exception as e:
+            logger.error(f"Failed to extract Rust docstrings: {e}")
+            
+        return chunks
+
+    def _clean_rust_doc_text(self, text: str) -> str:
+        """Clean Rust documentation comment text by removing markers and prefixes."""
+        cleaned = text.strip()
+        
+        # Remove /** */ or /*! */ markers
+        if (cleaned.startswith("/**") or cleaned.startswith("/*!")) and cleaned.endswith("*/"):
+            cleaned = cleaned[3:-2]
+        # Remove /// or //! markers
+        elif cleaned.startswith("///") or cleaned.startswith("//!"):
+            lines = cleaned.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith('///'):
+                    line = line[3:].lstrip()
+                elif line.startswith('//!'):
+                    line = line[3:].lstrip()
+                cleaned_lines.append(line)
+            return '\n'.join(cleaned_lines).strip()
+        
+        # Remove leading * from each line for block comments
+        lines = cleaned.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if line.startswith('*'):
+                line = line[1:].lstrip()
+            cleaned_lines.append(line)
+            
+        return '\n'.join(cleaned_lines).strip()
+
+    def _extract_comments_generic(self, tree_node: TSNode, source: str, file_path: Path, 
+                                 comment_patterns: list[str]) -> list[dict[str, Any]]:
+        """Extract comments using generic patterns."""
+        chunks = []
+        
+        if not comment_patterns or self._language is None:
+            return chunks
+            
+        try:
+            for pattern in comment_patterns:
+                query = self._language.query(pattern)
+                matches = query.matches(tree_node)
+                
+                for match in matches:
+                    pattern_index, captures = match
+                    
+                    for capture_name, nodes in captures.items():
+                        for node in nodes:
+                            comment_text = self._get_node_text(node, source)
+                            
+                            # Skip empty comments and doc comments (handled separately)
+                            if (not comment_text.strip() or 
+                                comment_text.strip().startswith("///") or
+                                comment_text.strip().startswith("//!") or
+                                comment_text.strip().startswith("/*!") or
+                                comment_text.strip().startswith("/**")):
+                                continue
+                                
+                            cleaned_text = self._clean_comment_text(comment_text)
+                            symbol = f"comment:{node.start_point[0] + 1}"
+                            
+                            chunk = self._create_chunk(
+                                node=node,
+                                source=source,
+                                file_path=file_path,
+                                chunk_type=ChunkType.COMMENT,
+                                name=symbol,
+                                display_name=f"Comment at line {node.start_point[0] + 1}",
+                                content=cleaned_text
+                            )
+                            
+                            chunks.append(chunk)
+                            
+        except Exception as e:
+            logger.error(f"Failed to extract comments for Rust: {e}")
+            
+        return chunks
+    
+    def _clean_comment_text(self, text: str) -> str:
+        """Clean comment text by removing comment markers."""
+        cleaned = text.strip()
+        
+        # Remove common single-line comment markers
+        if cleaned.startswith("//"):
+            cleaned = cleaned[2:].strip()
+            
+        # Remove common multi-line comment markers (but not doc comments)
+        if (cleaned.startswith("/*") and cleaned.endswith("*/") and 
+            not cleaned.startswith("/**") and not cleaned.startswith("/*!")):
+            cleaned = cleaned[2:-2].strip()
+            
+        return cleaned
+
+    def _create_chunk(self, node: TSNode, source: str, file_path: Path,
+                     chunk_type: ChunkType, name: str, display_name: str | None = None,
+                     parent: str | None = None, **extra_fields) -> dict[str, Any]:
+        """Create a standard chunk dictionary."""
+        code = self._get_node_text(node, source)
+
+        chunk = {
+            "symbol": name,
+            "start_line": node.start_point[0] + 1,
+            "end_line": node.end_point[0] + 1,
+            "code": code,
+            "chunk_type": chunk_type.value,
+            "language": "rust",
+            "path": str(file_path),
+            "name": name,
+            "display_name": display_name or name,
+            "content": extra_fields.get('content', code),
+            "start_byte": node.start_byte,
+            "end_byte": node.end_byte,
+        }
+
+        if parent:
+            chunk["parent"] = parent
+
+        # Add extra fields
+        for key, value in extra_fields.items():
+            if key != 'content':  # content already handled above
+                chunk[key] = value
+
+        return chunk

@@ -41,7 +41,7 @@ class TomlParser(TreeSitterParserBase):
         return ParseConfig(
             language=CoreLanguage.TOML,
             chunk_types={
-                ChunkType.TABLE, ChunkType.KEY_VALUE, ChunkType.ARRAY, ChunkType.BLOCK
+                ChunkType.TABLE, ChunkType.KEY_VALUE, ChunkType.ARRAY, ChunkType.BLOCK, ChunkType.COMMENT
             },
             max_chunk_size=4000,
             min_chunk_size=50,
@@ -83,6 +83,11 @@ class TomlParser(TreeSitterParserBase):
 
             if ChunkType.BLOCK in self._config.chunk_types:
                 chunks.extend(self._extract_blocks(tree_node, source, file_path))
+
+            # Extract comments
+            if ChunkType.COMMENT in self._config.chunk_types:
+                comment_patterns = ["(comment) @comment"]
+                chunks.extend(self._extract_comments_generic(tree_node, source, file_path, comment_patterns))
 
             # Sort chunks by start position
             chunks.sort(

@@ -39,7 +39,9 @@ class TypeScriptParser(TreeSitterParserBase):
                 ChunkType.INTERFACE,
                 ChunkType.METHOD,
                 ChunkType.ENUM,
-                ChunkType.TYPE_ALIAS
+                ChunkType.TYPE_ALIAS,
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -90,6 +92,23 @@ class TypeScriptParser(TreeSitterParserBase):
         # Extract React components
         if ChunkType.FUNCTION in self._config.chunk_types:
             chunks.extend(self._extract_components(tree_node, source, file_path))
+
+        # Extract comments
+        if ChunkType.COMMENT in self._config.chunk_types:
+            comment_patterns = ["(comment) @comment"]
+            chunks.extend(self._extract_comments_generic(tree_node, source, file_path, comment_patterns))
+
+        # Extract JSDoc comments as docstrings
+        if ChunkType.DOCSTRING in self._config.chunk_types:
+            docstring_patterns = [
+                ("(comment) @jsdoc", "jsdoc")
+            ]
+            # Filter for JSDoc-style comments only
+            jsdoc_chunks = []
+            for chunk in self._extract_docstrings_generic(tree_node, source, file_path, docstring_patterns):
+                if chunk["code"].strip().startswith("/**"):
+                    jsdoc_chunks.append(chunk)
+            chunks.extend(jsdoc_chunks)
 
         return chunks
 

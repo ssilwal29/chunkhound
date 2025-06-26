@@ -56,6 +56,8 @@ class CParser:
                 ChunkType.VARIABLE,
                 ChunkType.TYPE,
                 ChunkType.MACRO,
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING,
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -246,6 +248,17 @@ class CParser:
             if ChunkType.MACRO in self._config.chunk_types:
                 chunks.extend(
                     self._extract_macros(tree_node, source, file_path)
+                )
+
+            # Extract comments and docstrings
+            if ChunkType.COMMENT in self._config.chunk_types:
+                chunks.extend(
+                    self._extract_comments(tree_node, source, file_path)
+                )
+
+            if ChunkType.DOCSTRING in self._config.chunk_types:
+                chunks.extend(
+                    self._extract_docstrings(tree_node, source, file_path)
                 )
 
         except Exception as e:
@@ -560,3 +573,128 @@ class CParser:
             "start_byte": node.start_byte,
             "end_byte": node.end_byte,
         }
+
+    def _extract_comments(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract C comments (// and /* */)."""
+        comment_patterns = [
+            "(comment) @comment"
+        ]
+        return self._extract_comments_generic(tree_node, source, file_path, comment_patterns)
+
+    def _extract_docstrings(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract C documentation comments (/** */)."""
+        chunks = []
+        
+        if self._language is None:
+            return chunks
+            
+        try:
+            # Extract documentation comments (/** ... */)
+            query = self._language.query("(comment) @comment")
+            matches = query.matches(tree_node)
+            
+            for match in matches:
+                pattern_index, captures = match
+                
+                for capture_name, nodes in captures.items():
+                    for node in nodes:
+                        comment_text = self._get_node_text(node, source)
+                        
+                        # Check if it's a documentation comment (starts with /**)
+                        if comment_text.strip().startswith("/**"):
+                            cleaned_text = self._clean_doc_comment_text(comment_text)
+                            symbol = f"doc:{node.start_point[0] + 1}"
+                            
+                            chunk = self._create_chunk(
+                                node=node,
+                                source=source,
+                                file_path=file_path,
+                                chunk_type=ChunkType.DOCSTRING,
+                                name=symbol,
+                                display_name=f"Documentation at line {node.start_point[0] + 1}",
+                                content=cleaned_text
+                            )
+                            
+                            chunks.append(chunk)
+                            
+        except Exception as e:
+            logger.error(f"Failed to extract C docstrings: {e}")
+            
+        return chunks
+
+    def _clean_doc_comment_text(self, text: str) -> str:
+        """Clean documentation comment text by removing /** */ markers and * prefixes."""
+        cleaned = text.strip()
+        
+        # Remove /** */ markers
+        if cleaned.startswith("/**") and cleaned.endswith("*/"):
+            cleaned = cleaned[3:-2]
+        
+        # Remove leading * from each line
+        lines = cleaned.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if line.startswith('*'):
+                line = line[1:].lstrip()
+            cleaned_lines.append(line)
+            
+        return '\n'.join(cleaned_lines).strip()
+
+    def _extract_comments_generic(self, tree_node: TSNode, source: str, file_path: Path, 
+                                 comment_patterns: list[str]) -> list[dict[str, Any]]:
+        """Extract comments using generic patterns."""
+        chunks = []
+        
+        if not comment_patterns or self._language is None:
+            return chunks
+            
+        try:
+            for pattern in comment_patterns:
+                query = self._language.query(pattern)
+                matches = query.matches(tree_node)
+                
+                for match in matches:
+                    pattern_index, captures = match
+                    
+                    for capture_name, nodes in captures.items():
+                        for node in nodes:
+                            comment_text = self._get_node_text(node, source)
+                            
+                            # Skip empty comments and doc comments (handled separately)
+                            if not comment_text.strip() or comment_text.strip().startswith("/**"):
+                                continue
+                                
+                            cleaned_text = self._clean_comment_text(comment_text)
+                            symbol = f"comment:{node.start_point[0] + 1}"
+                            
+                            chunk = self._create_chunk(
+                                node=node,
+                                source=source,
+                                file_path=file_path,
+                                chunk_type=ChunkType.COMMENT,
+                                name=symbol,
+                                display_name=f"Comment at line {node.start_point[0] + 1}",
+                                content=cleaned_text
+                            )
+                            
+                            chunks.append(chunk)
+                            
+        except Exception as e:
+            logger.error(f"Failed to extract comments for C: {e}")
+            
+        return chunks
+    
+    def _clean_comment_text(self, text: str) -> str:
+        """Clean comment text by removing comment markers."""
+        cleaned = text.strip()
+        
+        # Remove common single-line comment markers
+        if cleaned.startswith("//"):
+            cleaned = cleaned[2:].strip()
+            
+        # Remove common multi-line comment markers (but not doc comments)
+        if cleaned.startswith("/*") and cleaned.endswith("*/") and not cleaned.startswith("/**"):
+            cleaned = cleaned[2:-2].strip()
+            
+        return cleaned

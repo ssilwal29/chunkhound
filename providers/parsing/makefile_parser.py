@@ -38,7 +38,7 @@ class MakefileParser(TreeSitterParserBase):
         """Get default configuration for Makefile parser."""
         return ParseConfig(
             language=CoreLanguage.MAKEFILE,
-            chunk_types={ChunkType.FUNCTION, ChunkType.BLOCK},
+            chunk_types={ChunkType.FUNCTION, ChunkType.BLOCK, ChunkType.COMMENT},
             max_chunk_size=8000,
             min_chunk_size=50,
             include_imports=True,
@@ -199,7 +199,7 @@ class MakefileParser(TreeSitterParserBase):
             # Only extract meaningful comments (not just single # lines)
             if len(comment_text) > 10:
                 chunk = self._create_chunk(
-                    node, source, file_path, ChunkType.BLOCK,
+                    node, source, file_path, ChunkType.COMMENT,
                     f"comment_{node.start_point[0]}",
                     display_name="comment",
                     parent=parent,

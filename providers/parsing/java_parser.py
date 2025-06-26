@@ -47,7 +47,9 @@ class JavaParser:
                 ChunkType.METHOD,
                 ChunkType.CONSTRUCTOR,
                 ChunkType.ENUM,
-                ChunkType.FIELD
+                ChunkType.FIELD,
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -167,6 +169,12 @@ class JavaParser:
 
             if ChunkType.METHOD in self._config.chunk_types or ChunkType.CONSTRUCTOR in self._config.chunk_types:
                 chunks.extend(self._extract_methods(tree.root_node, source, file_path, package_name))
+
+            if ChunkType.COMMENT in self._config.chunk_types:
+                chunks.extend(self._extract_comments(tree.root_node, source, file_path))
+
+            if ChunkType.DOCSTRING in self._config.chunk_types:
+                chunks.extend(self._extract_javadoc(tree.root_node, source, file_path))
 
             logger.debug(f"Extracted {len(chunks)} chunks from {file_path}")
 
@@ -772,3 +780,139 @@ class JavaParser:
         except Exception as e:
             logger.error(f"Failed to extract Java method return type: {e}")
             return None
+
+    def _extract_comments(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract Java comments from AST."""
+        chunks = []
+
+        try:
+            if self._language is None:
+                return chunks
+
+            # Query for comment nodes (Java tree-sitter might not support comment queries)
+            try:
+                query = self._language.query("""
+                    (line_comment) @comment
+                    (block_comment) @comment
+                """)
+            except Exception:
+                # Fallback: Java tree-sitter might not support comment node types
+                logger.debug("Java comment queries not supported")
+                return chunks
+
+            matches = query.matches(tree_node)
+
+            for match in matches:
+                pattern_index, captures = match
+
+                if "comment" not in captures:
+                    continue
+
+                for comment_node in captures["comment"]:
+                    comment_text = self._get_node_text(comment_node, source)
+
+                    # Skip Javadoc comments (handled separately)
+                    if comment_text.strip().startswith("/**"):
+                        continue
+
+                    # Skip empty comments
+                    if not comment_text.strip():
+                        continue
+
+                    # Clean up comment text
+                    cleaned_text = comment_text.strip()
+                    if cleaned_text.startswith("//"):
+                        cleaned_text = cleaned_text[2:].strip()
+                    elif cleaned_text.startswith("/*") and cleaned_text.endswith("*/"):
+                        cleaned_text = cleaned_text[2:-2].strip()
+
+                    symbol = f"comment:{comment_node.start_point[0] + 1}"
+
+                    chunk = {
+                        "symbol": symbol,
+                        "start_line": comment_node.start_point[0] + 1,
+                        "end_line": comment_node.end_point[0] + 1,
+                        "code": comment_text,
+                        "chunk_type": ChunkType.COMMENT.value,
+                        "language": "java",
+                        "path": str(file_path),
+                        "name": symbol,
+                        "display_name": f"Comment at line {comment_node.start_point[0] + 1}",
+                        "content": cleaned_text,
+                        "start_byte": comment_node.start_byte,
+                        "end_byte": comment_node.end_byte,
+                    }
+
+                    chunks.append(chunk)
+
+        except Exception as e:
+            logger.error(f"Failed to extract Java comments: {e}")
+
+        return chunks
+
+    def _extract_javadoc(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract Javadoc comments from AST."""
+        chunks = []
+
+        try:
+            if self._language is None:
+                return chunks
+
+            # Query for Javadoc comment nodes (Java tree-sitter might not support comment queries)
+            try:
+                query = self._language.query("""
+                    (block_comment) @javadoc
+                """)
+            except Exception:
+                # Fallback: Java tree-sitter might not support comment node types
+                logger.debug("Java Javadoc queries not supported")
+                return chunks
+
+            matches = query.matches(tree_node)
+
+            for match in matches:
+                pattern_index, captures = match
+
+                if "javadoc" not in captures:
+                    continue
+
+                for javadoc_node in captures["javadoc"]:
+                    javadoc_text = self._get_node_text(javadoc_node, source)
+
+                    # Only process Javadoc comments
+                    if not javadoc_text.strip().startswith("/**"):
+                        continue
+
+                    # Skip empty Javadoc
+                    if not javadoc_text.strip():
+                        continue
+
+                    # Clean up Javadoc text
+                    cleaned_text = javadoc_text.strip()
+                    if cleaned_text.startswith("/**") and cleaned_text.endswith("*/"):
+                        cleaned_text = cleaned_text[3:-2].strip()
+
+                    symbol = f"docstring:javadoc:{javadoc_node.start_point[0] + 1}"
+
+                    chunk = {
+                        "symbol": symbol,
+                        "start_line": javadoc_node.start_point[0] + 1,
+                        "end_line": javadoc_node.end_point[0] + 1,
+                        "code": javadoc_text,
+                        "chunk_type": ChunkType.DOCSTRING.value,
+                        "language": "java",
+                        "path": str(file_path),
+                        "name": symbol,
+                        "display_name": "Javadoc comment",
+                        "content": cleaned_text,
+                        "start_byte": javadoc_node.start_byte,
+                        "end_byte": javadoc_node.end_byte,
+                        "context": "javadoc",
+                    }
+
+                    chunks.append(chunk)
+
+        except Exception as e:
+            logger.error(f"Failed to extract Java Javadoc: {e}")
+
+        return chunks

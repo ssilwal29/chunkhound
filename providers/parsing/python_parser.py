@@ -44,7 +44,9 @@ class PythonParser:
                 ChunkType.FUNCTION,
                 ChunkType.CLASS,
                 ChunkType.METHOD,
-                ChunkType.BLOCK
+                ChunkType.BLOCK,
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -155,6 +157,12 @@ class PythonParser:
 
             if ChunkType.CLASS in self._config.chunk_types:
                 chunks.extend(self._extract_classes(tree.root_node, source, file_path))
+            
+            if ChunkType.DOCSTRING in self._config.chunk_types:
+                chunks.extend(self._extract_docstrings(tree.root_node, source, file_path))
+                
+            if ChunkType.COMMENT in self._config.chunk_types:
+                chunks.extend(self._extract_comments(tree.root_node, source, file_path))
 
             # Fallback: create a BLOCK chunk if no structured chunks were found
             if len(chunks) == 0 and ChunkType.BLOCK in self._config.chunk_types:
@@ -454,3 +462,124 @@ class PythonParser:
         }
 
         return chunk
+    
+    def _extract_docstrings(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract Python docstrings from AST."""
+        chunks = []
+        
+        try:
+            if self._language is None:
+                return chunks
+                
+            # Query for all string nodes that are docstrings
+            query = self._language.query("""
+                (module . (expression_statement (string) @module_docstring))
+                (function_definition body: (block . (expression_statement (string) @function_docstring)))
+                (class_definition body: (block . (expression_statement (string) @class_docstring)))
+            """)
+            
+            matches = query.matches(tree_node)
+            
+            for match in matches:
+                pattern_index, captures = match
+                
+                # Process each capture type
+                for capture_name, nodes in captures.items():
+                    for node in nodes:
+                        docstring_text = self._get_node_text(node, source)
+                        
+                        # Skip empty docstrings
+                        if not docstring_text.strip():
+                            continue
+                        
+                        # Remove quotes and clean up
+                        cleaned_text = docstring_text.strip()
+                        if cleaned_text.startswith('"""') or cleaned_text.startswith("'''"):
+                            cleaned_text = cleaned_text[3:-3].strip()
+                        elif cleaned_text.startswith('"') or cleaned_text.startswith("'"):
+                            cleaned_text = cleaned_text[1:-1].strip()
+                        
+                        # Determine context based on capture name
+                        context = "module"
+                        if "function" in capture_name:
+                            context = "function"
+                        elif "class" in capture_name:
+                            context = "class"
+                            
+                        symbol = f"docstring:{context}:{node.start_point[0] + 1}"
+                        
+                        chunk = {
+                            "symbol": symbol,
+                            "start_line": node.start_point[0] + 1,
+                            "end_line": node.end_point[0] + 1,
+                            "code": docstring_text,
+                            "chunk_type": ChunkType.DOCSTRING.value,
+                            "language": "python",
+                            "path": str(file_path),
+                            "name": symbol,
+                            "display_name": f"{context.capitalize()} docstring",
+                            "content": cleaned_text,
+                            "start_byte": node.start_byte,
+                            "end_byte": node.end_byte,
+                            "context": context,
+                        }
+                        
+                        chunks.append(chunk)
+                        
+        except Exception as e:
+            logger.error(f"Failed to extract Python docstrings: {e}")
+            
+        return chunks
+    
+    def _extract_comments(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract Python comments from AST."""
+        chunks = []
+        
+        try:
+            if self._language is None:
+                return chunks
+                
+            # Query for comment nodes
+            query = self._language.query("""
+                (comment) @comment
+            """)
+            
+            matches = query.matches(tree_node)
+            
+            for match in matches:
+                pattern_index, captures = match
+                
+                if "comment" not in captures:
+                    continue
+                    
+                for comment_node in captures["comment"]:
+                    comment_text = self._get_node_text(comment_node, source)
+                    
+                    # Clean up comment text
+                    cleaned_text = comment_text.strip()
+                    if cleaned_text.startswith("#"):
+                        cleaned_text = cleaned_text[1:].strip()
+                        
+                    symbol = f"comment:{comment_node.start_point[0] + 1}"
+                    
+                    chunk = {
+                        "symbol": symbol,
+                        "start_line": comment_node.start_point[0] + 1,
+                        "end_line": comment_node.end_point[0] + 1,
+                        "code": comment_text,
+                        "chunk_type": ChunkType.COMMENT.value,
+                        "language": "python",
+                        "path": str(file_path),
+                        "name": symbol,
+                        "display_name": f"Comment at line {comment_node.start_point[0] + 1}",
+                        "content": cleaned_text,
+                        "start_byte": comment_node.start_byte,
+                        "end_byte": comment_node.end_byte,
+                    }
+                    
+                    chunks.append(chunk)
+                    
+        except Exception as e:
+            logger.error(f"Failed to extract Python comments: {e}")
+            
+        return chunks

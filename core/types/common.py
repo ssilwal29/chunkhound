@@ -56,6 +56,8 @@ class ChunkType(Enum):
     MACRO = "macro"
 
     # Documentation types
+    COMMENT = "comment"
+    DOCSTRING = "docstring"
     HEADER_1 = "header_1"
     HEADER_2 = "header_2"
     HEADER_3 = "header_3"
@@ -96,6 +98,7 @@ class ChunkType(Enum):
     def is_documentation(self) -> bool:
         """Return True if this chunk type represents documentation."""
         return self in {
+            self.COMMENT, self.DOCSTRING,
             self.HEADER_1, self.HEADER_2, self.HEADER_3,
             self.HEADER_4, self.HEADER_5, self.HEADER_6,
             self.PARAGRAPH, self.CODE_BLOCK

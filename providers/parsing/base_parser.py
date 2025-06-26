@@ -236,3 +236,163 @@ class TreeSitterParserBase:
         chunk.update(extra_fields)
 
         return chunk
+    
+    def _extract_comments_generic(self, tree_node: TSNode, source: str, file_path: Path, 
+                                 comment_patterns: list[str]) -> list[dict[str, Any]]:
+        """Extract comments using generic patterns.
+        
+        Args:
+            tree_node: Root AST node
+            source: Source code string
+            file_path: Path to source file
+            comment_patterns: List of tree-sitter query patterns for comments
+            
+        Returns:
+            List of comment chunks
+        """
+        chunks = []
+        
+        if not comment_patterns or self._language is None:
+            return chunks
+            
+        try:
+            for pattern in comment_patterns:
+                query = self._language.query(pattern)
+                matches = query.matches(tree_node)
+                
+                for match in matches:
+                    pattern_index, captures = match
+                    
+                    for capture_name, nodes in captures.items():
+                        for node in nodes:
+                            comment_text = self._get_node_text(node, source)
+                            
+                            # Skip empty comments
+                            if not comment_text.strip():
+                                continue
+                                
+                            cleaned_text = self._clean_comment_text(comment_text)
+                            symbol = f"comment:{node.start_point[0] + 1}"
+                            
+                            chunk = self._create_chunk(
+                                node=node,
+                                source=source,
+                                file_path=file_path,
+                                chunk_type=ChunkType.COMMENT,
+                                name=symbol,
+                                display_name=f"Comment at line {node.start_point[0] + 1}",
+                                content=cleaned_text
+                            )
+                            
+                            chunks.append(chunk)
+                            
+        except Exception as e:
+            logger.error(f"Failed to extract comments for {self._language_name.value}: {e}")
+            
+        return chunks
+    
+    def _extract_docstrings_generic(self, tree_node: TSNode, source: str, file_path: Path,
+                                   docstring_patterns: list[tuple[str, str]]) -> list[dict[str, Any]]:
+        """Extract docstrings using generic patterns.
+        
+        Args:
+            tree_node: Root AST node
+            source: Source code string
+            file_path: Path to source file
+            docstring_patterns: List of (query_pattern, context_name) tuples
+            
+        Returns:
+            List of docstring chunks
+        """
+        chunks = []
+        
+        if not docstring_patterns or self._language is None:
+            return chunks
+            
+        try:
+            for pattern, context in docstring_patterns:
+                query = self._language.query(pattern)
+                matches = query.matches(tree_node)
+                
+                for match in matches:
+                    pattern_index, captures = match
+                    
+                    for capture_name, nodes in captures.items():
+                        for node in nodes:
+                            docstring_text = self._get_node_text(node, source)
+                            
+                            # Skip empty docstrings
+                            if not docstring_text.strip():
+                                continue
+                                
+                            cleaned_text = self._clean_docstring_text(docstring_text)
+                            symbol = f"docstring:{context}:{node.start_point[0] + 1}"
+                            
+                            chunk = self._create_chunk(
+                                node=node,
+                                source=source,
+                                file_path=file_path,
+                                chunk_type=ChunkType.DOCSTRING,
+                                name=symbol,
+                                display_name=f"{context.capitalize()} docstring",
+                                content=cleaned_text,
+                                context=context
+                            )
+                            
+                            chunks.append(chunk)
+                            
+        except Exception as e:
+            logger.error(f"Failed to extract docstrings for {self._language_name.value}: {e}")
+            
+        return chunks
+    
+    def _clean_comment_text(self, text: str) -> str:
+        """Clean comment text by removing comment markers.
+        
+        Args:
+            text: Raw comment text
+            
+        Returns:
+            Cleaned comment text
+        """
+        cleaned = text.strip()
+        
+        # Remove common single-line comment markers
+        if cleaned.startswith("//"):
+            cleaned = cleaned[2:].strip()
+        elif cleaned.startswith("#"):
+            cleaned = cleaned[1:].strip()
+        elif cleaned.startswith("--"):
+            cleaned = cleaned[2:].strip()
+            
+        # Remove common multi-line comment markers
+        if cleaned.startswith("/*") and cleaned.endswith("*/"):
+            cleaned = cleaned[2:-2].strip()
+        elif cleaned.startswith("<!--") and cleaned.endswith("-->"):
+            cleaned = cleaned[4:-3].strip()
+            
+        return cleaned
+    
+    def _clean_docstring_text(self, text: str) -> str:
+        """Clean docstring text by removing quotes.
+        
+        Args:
+            text: Raw docstring text
+            
+        Returns:
+            Cleaned docstring text
+        """
+        cleaned = text.strip()
+        
+        # Remove triple quotes
+        if cleaned.startswith('"""') and cleaned.endswith('"""'):
+            cleaned = cleaned[3:-3]
+        elif cleaned.startswith("'''") and cleaned.endswith("'''"):
+            cleaned = cleaned[3:-3]
+        # Remove single quotes
+        elif cleaned.startswith('"') and cleaned.endswith('"'):
+            cleaned = cleaned[1:-1]
+        elif cleaned.startswith("'") and cleaned.endswith("'"):
+            cleaned = cleaned[1:-1]
+            
+        return cleaned.strip()

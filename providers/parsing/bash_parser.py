@@ -9,6 +9,7 @@ from loguru import logger
 from core.types import ChunkType
 from core.types import Language as CoreLanguage
 from interfaces.language_parser import ParseConfig, ParseResult
+from providers.parsing.base_parser import TreeSitterParserBase
 
 try:
     from tree_sitter import Language as TSLanguage
@@ -33,7 +34,7 @@ except ImportError:
     ts_bash = None
 
 
-class BashParser:
+class BashParser(TreeSitterParserBase):
     """Bash language parser using tree-sitter."""
 
     def __init__(self, config: ParseConfig | None = None):
@@ -42,14 +43,13 @@ class BashParser:
         Args:
             config: Optional parse configuration
         """
-        self._language = None
-        self._parser = None
-        self._initialized = False
+        super().__init__(CoreLanguage.BASH, config)
 
-        # Default configuration for Bash-specific chunk types
-        self._config = config or ParseConfig(
+    def _get_default_config(self) -> ParseConfig:
+        """Get default configuration for Bash parser."""
+        return ParseConfig(
             language=CoreLanguage.BASH,
-            chunk_types={ChunkType.FUNCTION, ChunkType.BLOCK},
+            chunk_types={ChunkType.FUNCTION, ChunkType.BLOCK, ChunkType.COMMENT},
             max_chunk_size=8000,
             min_chunk_size=100,
             include_imports=True,
@@ -58,13 +58,6 @@ class BashParser:
             max_depth=10,
             use_cache=True,
         )
-
-        # Initialize parser - crash if dependencies unavailable
-        if not BASH_AVAILABLE and not BASH_DIRECT_AVAILABLE:
-            raise ImportError("Bash tree-sitter dependencies not available - install tree-sitter-language-pack or tree-sitter-bash")
-
-        if not self._initialize():
-            raise RuntimeError("Failed to initialize Bash parser")
 
     def _initialize(self) -> bool:
         """Initialize the Bash parser.
@@ -104,92 +97,7 @@ class BashParser:
         logger.error("Bash parser initialization failed with both methods")
         return False
 
-    @property
-    def language(self) -> CoreLanguage:
-        """Programming language this parser handles."""
-        return CoreLanguage.BASH
 
-    @property
-    def supported_chunk_types(self) -> set[ChunkType]:
-        """Chunk types this parser can extract."""
-        return self._config.chunk_types
-
-    @property
-    def is_available(self) -> bool:
-        """Whether the parser is available and ready to use."""
-        return (BASH_AVAILABLE or BASH_DIRECT_AVAILABLE) and self._initialized
-
-    def _get_node_text(self, node: TSNode, source: str) -> str:
-        """Extract text content from a tree-sitter node."""
-        return source[node.start_byte:node.end_byte]
-
-    def parse_file(self, file_path: Path, source: str | None = None) -> ParseResult:
-        """Parse a Bash file and extract semantic chunks.
-
-        Args:
-            file_path: Path to Bash file
-            source: Optional source code string
-
-        Returns:
-            ParseResult with extracted chunks and metadata
-        """
-        start_time = time.time()
-        chunks = []
-        errors = []
-        warnings = []
-
-        if not self.is_available:
-            errors.append("Bash parser not available")
-            return ParseResult(
-                chunks=chunks,
-                language=self.language,
-                total_chunks=0,
-                parse_time=time.time() - start_time,
-                errors=errors,
-                warnings=warnings,
-                metadata={"file_path": str(file_path)}
-            )
-
-        try:
-            # Read source if not provided
-            if source is None:
-                with open(file_path, encoding='utf-8') as f:
-                    source = f.read()
-
-            # Parse with tree-sitter
-            if self._parser is None:
-                errors.append("Bash parser not initialized")
-                return ParseResult(
-                    chunks=chunks,
-                    language=self.language,
-                    total_chunks=0,
-                    parse_time=time.time() - start_time,
-                    errors=errors,
-                    warnings=warnings,
-                    metadata={"file_path": str(file_path)}
-                )
-
-            tree = self._parser.parse(bytes(source, 'utf8'))
-
-            # Extract semantic units
-            chunks = self._extract_chunks(tree.root_node, source, file_path)
-
-            logger.debug(f"Extracted {len(chunks)} chunks from {file_path}")
-
-        except Exception as e:
-            error_msg = f"Failed to parse Bash file {file_path}: {e}"
-            logger.error(error_msg)
-            errors.append(error_msg)
-
-        return ParseResult(
-            chunks=chunks,
-            language=self.language,
-            total_chunks=len(chunks),
-            parse_time=time.time() - start_time,
-            errors=errors,
-            warnings=warnings,
-            metadata={"file_path": str(file_path)}
-        )
 
     def _extract_chunks(
         self, tree_node: TSNode, source: str, file_path: Path
@@ -212,6 +120,11 @@ class BashParser:
 
         try:
             self._traverse_node(tree_node, source, chunks, file_path)
+            
+            # Extract comments
+            if ChunkType.COMMENT in self._config.chunk_types:
+                chunks.extend(self._extract_comments(tree_node, source, file_path))
+                
             return chunks
         except Exception as e:
             logger.error(f"Failed to extract Bash chunks: {e}")
@@ -282,22 +195,11 @@ class BashParser:
                     break
 
             if self._should_include_chunk(chunk_text, ChunkType.FUNCTION):
-                chunks.append(
-                    {
-                        "symbol": function_name,
-                        "name": function_name,
-                        "display_name": function_name,
-                        "chunk_type": ChunkType.FUNCTION.value,
-                        "start_line": start_line,
-                        "end_line": end_line,
-                        "path": str(file_path),
-                        "language": "bash",
-                        "content": chunk_text,
-                        "code": chunk_text,
-                        "start_byte": node.start_byte,
-                        "end_byte": node.end_byte,
-                    }
+                chunk = self._create_chunk(
+                    node, source, file_path, ChunkType.FUNCTION,
+                    function_name, function_name
                 )
+                chunks.append(chunk)
 
         except Exception as e:
             logger.debug(f"Failed to extract Bash function: {e}")
@@ -325,19 +227,12 @@ class BashParser:
             chunk_text = self._get_node_text(node, source)
 
             if self._should_include_chunk(chunk_text, ChunkType.BLOCK):
-                chunks.append(
-                    {
-                        "symbol": f"{structure_type}_{start_line}",
-                        "name": f"{structure_type}_{start_line}",
-                        "chunk_type": ChunkType.BLOCK,
-                        "start_line": start_line,
-                        "end_line": end_line,
-                        "file_path": str(file_path),
-                        "language": self.language.value,
-                        "line_count": end_line - start_line + 1,
-                        "code": chunk_text,
-                    }
+                chunk = self._create_chunk(
+                    node, source, file_path, ChunkType.BLOCK,
+                    f"{structure_type}_{start_line}",
+                    line_count=end_line - start_line + 1
                 )
+                chunks.append(chunk)
 
         except Exception as e:
             logger.debug(f"Failed to extract Bash control structure: {e}")
@@ -364,19 +259,12 @@ class BashParser:
             chunk_text = self._get_node_text(node, source)
 
             if self._should_include_chunk(chunk_text, ChunkType.BLOCK):
-                chunks.append(
-                    {
-                        "symbol": f"command_{start_line}",
-                        "name": f"command_{start_line}",
-                        "chunk_type": ChunkType.BLOCK,
-                        "start_line": start_line,
-                        "end_line": end_line,
-                        "file_path": str(file_path),
-                        "language": self.language.value,
-                        "line_count": end_line - start_line + 1,
-                        "code": chunk_text,
-                    }
+                chunk = self._create_chunk(
+                    node, source, file_path, ChunkType.BLOCK,
+                    f"command_{start_line}",
+                    line_count=end_line - start_line + 1
                 )
+                chunks.append(chunk)
 
         except Exception as e:
             logger.debug(f"Failed to extract Bash command: {e}")
@@ -409,19 +297,12 @@ class BashParser:
                         var_name = self._get_node_text(child, source)
                         break
 
-                chunks.append(
-                    {
-                        "symbol": f"var_{var_name}_{start_line}",
-                        "name": f"var_{var_name}_{start_line}",
-                        "chunk_type": ChunkType.BLOCK,
-                        "start_line": start_line,
-                        "end_line": end_line,
-                        "file_path": str(file_path),
-                        "language": self.language.value,
-                        "line_count": end_line - start_line + 1,
-                        "code": chunk_text,
-                    }
+                chunk = self._create_chunk(
+                    node, source, file_path, ChunkType.BLOCK,
+                    f"var_{var_name}_{start_line}",
+                    line_count=end_line - start_line + 1
                 )
+                chunks.append(chunk)
 
         except Exception as e:
             logger.debug(f"Failed to extract Bash variable assignment: {e}")
@@ -451,10 +332,6 @@ class BashParser:
 
         return True
 
-    def _get_node_text(self, node: TSNode, source: str) -> str:
-        """Extract text content from a tree-sitter node."""
-        return source[node.start_byte : node.end_byte]
-
     def _extract_fallback_chunks(
         self, source: str, file_path: Path
     ) -> list[dict[str, Any]]:
@@ -469,19 +346,31 @@ class BashParser:
                 "()" in stripped and "{" in stripped
             ):
                 # Found a function-like pattern
+                # Create a simple chunk using available data
                 chunks.append(
                     {
                         "symbol": f"function_{i + 1}",
                         "name": f"function_{i + 1}",
-                        "chunk_type": ChunkType.FUNCTION,
+                        "chunk_type": ChunkType.FUNCTION.value,
                         "start_line": i + 1,
                         "end_line": i + 1,
-                        "file_path": str(file_path),
+                        "path": str(file_path),
                         "language": self.language.value,
                         "line_count": 1,
                         "code": line,
+                        "content": line,
+                        "display_name": f"function_{i + 1}",
+                        "start_byte": 0,
+                        "end_byte": len(line.encode('utf-8')),
                     }
                 )
 
         return chunks
+
+    def _extract_comments(self, tree_node: TSNode, source: str, file_path: Path) -> list[dict[str, Any]]:
+        """Extract Bash comments (#)."""
+        comment_patterns = [
+            "(comment) @comment"
+        ]
+        return self._extract_comments_generic(tree_node, source, file_path, comment_patterns)
 

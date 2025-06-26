@@ -71,7 +71,9 @@ class GroovyParser(TreeSitterParserBase):
                 ChunkType.FIELD,
                 ChunkType.CLOSURE,
                 ChunkType.TRAIT,
-                ChunkType.SCRIPT
+                ChunkType.SCRIPT,
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -142,6 +144,23 @@ class GroovyParser(TreeSitterParserBase):
                 chunks.extend(
                     self._extract_script_level_code(tree_node, source, file_path)
                 )
+
+            # Extract comments
+            if ChunkType.COMMENT in self._config.chunk_types:
+                comment_patterns = ["(comment) @comment"]
+                chunks.extend(self._extract_comments_generic(tree_node, source, file_path, comment_patterns))
+
+            # Extract Groovydoc comments as docstrings
+            if ChunkType.DOCSTRING in self._config.chunk_types:
+                docstring_patterns = [
+                    ("(comment) @groovydoc", "groovydoc")
+                ]
+                # Filter for Groovydoc-style comments only
+                groovydoc_chunks = []
+                for chunk in self._extract_docstrings_generic(tree_node, source, file_path, docstring_patterns):
+                    if chunk["code"].strip().startswith("/**"):
+                        groovydoc_chunks.append(chunk)
+                chunks.extend(groovydoc_chunks)
 
         except Exception as e:
             logger.error(f"Failed to extract Groovy chunks: {e}")

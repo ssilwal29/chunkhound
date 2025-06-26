@@ -45,7 +45,9 @@ class MatlabParser(TreeSitterParserBase):
                 ChunkType.CLASS,
                 ChunkType.METHOD,
                 ChunkType.SCRIPT,
-                ChunkType.BLOCK
+                ChunkType.BLOCK,
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING
             },
             max_chunk_size=8000,
             min_chunk_size=100,
@@ -87,6 +89,23 @@ class MatlabParser(TreeSitterParserBase):
             if ChunkType.SCRIPT in self._config.chunk_types:
                 script_chunks = self._extract_script_blocks(tree_node, source, file_path)
                 chunks.extend(script_chunks)
+
+            # Extract comments
+            if ChunkType.COMMENT in self._config.chunk_types:
+                comment_patterns = ["(comment) @comment"]
+                chunks.extend(self._extract_comments_generic(tree_node, source, file_path, comment_patterns))
+
+            # Extract docstrings (Matlab help text)
+            if ChunkType.DOCSTRING in self._config.chunk_types:
+                docstring_patterns = [
+                    ("(comment) @help_text", "help")
+                ]
+                # Filter for help text (multiline comments starting with %%)
+                help_chunks = []
+                for chunk in self._extract_docstrings_generic(tree_node, source, file_path, docstring_patterns):
+                    if chunk["code"].strip().startswith("%%"):
+                        help_chunks.append(chunk)
+                chunks.extend(help_chunks)
 
             # Fallback: create a BLOCK chunk if no structured chunks were found
             if len(chunks) == 0 and ChunkType.BLOCK in self._config.chunk_types:

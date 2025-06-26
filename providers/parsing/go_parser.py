@@ -55,7 +55,9 @@ class GoParser:
                 ChunkType.STRUCT,
                 ChunkType.INTERFACE,
                 ChunkType.TYPE,
-                ChunkType.VARIABLE
+                ChunkType.VARIABLE,
+                ChunkType.COMMENT,
+                ChunkType.DOCSTRING
             },
             max_chunk_size=8000,
             min_chunk_size=100,
