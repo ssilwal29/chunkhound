@@ -18,7 +18,7 @@ Perform structured QA to the `semantic_search` and `regex_search` tools:
 **STOP IF ANY OF THE TESTS FAIL; CLEARY DOCUMENT THE FAILURE!!**
 
 **Tips**:
-- Wait a few seconds between a change and the test
+- Wait a few seconds between a change and the test so embeddings have time to be generated and indexed
 - Measure the time it takes for changes to be reflected in the search results
 - Use the task tool
 - THE MCP SERVER OF THESE TOOLS IS CONTROLLED EXTERNALLY. DON'T TRY TO STOP IT
