@@ -13,7 +13,7 @@ Perform structured QA to the `semantic_search` and `regex_search` tools:
 8. Check the pagination functionality of the semantic and regex searches individually:
    - Search for a non-existing value
    - Search for a value that appears once and won't trigger paging
-   - Search for a value that appears a lot, go over all pages, and compare the results with the results of grep for validation.
+   - Search for a value that appears a lot, go over all pages, and compare the results with the results of ripgrep for validation.
 
 **STOP IF ANY OF THE TESTS FAIL; CLEARY DOCUMENT THE FAILURE!!**
 
