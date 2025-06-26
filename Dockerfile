@@ -11,15 +11,16 @@ ARG BUILDPLATFORM
 # =============================================================================
 # Stage 1: Base Builder - Common dependencies and setup
 # =============================================================================
-FROM python:${PYTHON_VERSION}-${DEBIAN_VERSION} AS base-builder
+FROM ubuntu:16.04 AS base-builder
 
 # Print platform information for debugging
 RUN echo "Building for: $TARGETPLATFORM on $BUILDPLATFORM"
 
-# Install system dependencies required for building with caching optimization
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y \
+# Install system dependencies and Python 3.10
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
     build-essential \
     gcc \
     g++ \
@@ -29,9 +30,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     file \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast Python package management with caching
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install uv
+# Install uv for fast Python package management
+RUN python3.10 -m pip install uv
 
 # Set working directory
 WORKDIR /app
@@ -41,10 +41,8 @@ COPY pyproject.toml uv.lock ./
 COPY requirements.txt ./
 COPY README.md ./
 
-# Install Python dependencies with UV caching
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=cache,target=/root/.local/share/uv \
-    uv sync --no-dev
+# Install Python dependencies
+RUN python3.10 -m uv sync --no-dev
 
 # Copy source code
 COPY . .
@@ -58,18 +56,15 @@ FROM base-builder AS ubuntu-builder
 ARG TARGETPLATFORM
 ENV PLATFORM_ARCH=${TARGETPLATFORM}
 
-# Install PyInstaller for binary creation with caching
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=cache,target=/root/.local/share/uv \
-    uv add --dev pyinstaller
+# Install PyInstaller for binary creation
+RUN python3.10 -m uv add --dev pyinstaller
 
 # Create PyInstaller cache directory
 RUN mkdir -p /tmp/pyinstaller-cache
 
-# Build the onedir executable for Linux with architecture-specific optimizations
-RUN --mount=type=cache,target=/tmp/pyinstaller-cache \
-    echo "Building for platform: ${PLATFORM_ARCH}" && \
-    uv run pyinstaller chunkhound-optimized.spec \
+# Build the onedir executable for Linux
+RUN echo "Building for platform: ${PLATFORM_ARCH}" && \
+    python3.10 -m uv run pyinstaller chunkhound-optimized.spec \
     --clean \
     --noconfirm \
     --workpath /tmp/pyinstaller-work \
@@ -173,11 +168,12 @@ CMD ["uv", "run", "python", "-m", "chunkhound.cli", "mcp", "--help"]
 # =============================================================================
 # Stage 6: Runtime Environment - Minimal runtime for the binary
 # =============================================================================
-FROM python:${PYTHON_VERSION}-${DEBIAN_VERSION} AS runtime
+FROM ubuntu:16.04 AS runtime
 
 # Install minimal runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    python3.10 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from ubuntu-builder

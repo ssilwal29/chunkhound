@@ -38,35 +38,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Temporarily disabled for Windows-only testing
-          # - platform: ubuntu
-          #   os: ubuntu-22.04
-          #   binary_name: chunkhound-linux-amd64
-          #   docker_target: ubuntu-builder
-          #   artifact_path: dist/chunkhound-optimized
+          - platform: ubuntu-x86
+            os: ubuntu-22.04
+            binary_name: chunkhound-linux-x86
+            docker_target: ubuntu-builder
+            artifact_path: dist/chunkhound-optimized
 
-          # - platform: macos
-          #   os: macos-13 # Intel
-          #   binary_name: chunkhound-macos-amd64
-          #   docker_target: "" # Native build
-          #   artifact_path: dist/chunkhound-optimized
-
-          # - platform: macos-arm64
-          #   os: macos-15 # Apple Silicon (updated to latest)
-          #   binary_name: chunkhound-macos-arm64
-          #   docker_target: "" # Native build
-          #   artifact_path: dist/chunkhound-optimized
-
-          # - platform: ubuntu-arm64
-          #   os: ubuntu-22.04
-          #   binary_name: chunkhound-linux-arm64
-          #   docker_target: ubuntu-builder
-          #   artifact_path: dist/chunkhound-optimized
-
-          - platform: windows
-            os: windows-latest
-            binary_name: chunkhound-windows-amd64
-            docker_target: "" # Native build
+          - platform: ubuntu-x64
+            os: ubuntu-22.04
+            binary_name: chunkhound-linux-x64
+            docker_target: ubuntu-builder
             artifact_path: dist/chunkhound-optimized
 
     steps:
@@ -121,21 +102,19 @@ jobs:
             image=moby/buildkit:master
             network=host
 
-      - name: Set up QEMU
-        if: matrix.platform == 'ubuntu-arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Build Ubuntu Binary (Docker)
         if: startsWith(matrix.platform, 'ubuntu')
         run: |
-          echo "🐧 Building Ubuntu binary with Docker and advanced caching..."
+          echo "🐧 Building Ubuntu binary with Docker..."
 
-          # Determine architecture
-          if [ "${{ matrix.platform }}" == "ubuntu-arm64" ]; then
-            PLATFORM="linux/arm64"
-            ARCH_SUFFIX="arm64"
+          # Determine architecture - only x86 and x64
+          if [ "${{ matrix.platform }}" == "ubuntu-x64" ]; then
+            PLATFORM="linux/amd64"
+            ARCH_SUFFIX="x64"
+          elif [ "${{ matrix.platform }}" == "ubuntu-x86" ]; then
+            PLATFORM="linux/386"
+            ARCH_SUFFIX="x86"
           else
             PLATFORM="linux/amd64"
             ARCH_SUFFIX="amd64"
@@ -143,20 +122,13 @@ jobs:
 
           echo "Building for platform: $PLATFORM"
 
-          # Build using Docker multi-stage with cache and architecture
+          # Build using Docker for Ubuntu 16 with Python 3.10
           docker buildx build \
             --platform $PLATFORM \
             --target ubuntu-builder \
             --tag chunkhound:ubuntu-build-$ARCH_SUFFIX \
-            --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} \
-            --cache-from type=local,src=/tmp/.buildx-cache \
-            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
             --load \
             .
-
-          # Move cache (GitHub Actions cache limitation workaround)
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
           # Extract binary
           docker create --name temp-ubuntu-$ARCH_SUFFIX chunkhound:ubuntu-build-$ARCH_SUFFIX
@@ -169,195 +141,16 @@ jobs:
           # Create tarball
           cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
 
-          # Verify binary (skip for ARM64 on x86_64 host)
-          if [ "${{ matrix.platform }}" != "ubuntu-arm64" ]; then
-            if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-              ./dist/chunkhound-optimized/chunkhound-optimized --version
-            else
-              echo "❌ Binary not found at expected location"
-              exit 1
-            fi
-          else
-            echo "Skipping binary verification for ARM64 build on x86_64 host"
-            if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-              file ./dist/chunkhound-optimized/chunkhound-optimized
-            else
-              echo "❌ Binary not found at expected location"
-              exit 1
-            fi
-          fi
-
-      # macOS: Native build with caching
-      - name: Cache UV Installation
-        if: startsWith(matrix.platform, 'macos')
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.local/bin/uv
-            ~/.cargo/bin/uv
-          key: uv-binary-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Build macOS Binary (Native)
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          echo "🍎 Building macOS binary natively with caching..."
-
-          # Install uv for fast dependency management (cached)
-          if [ ! -f ~/.local/bin/uv ] && [ ! -f ~/.cargo/bin/uv ]; then
-            echo "Installing UV..."
-            echo "Architecture: $(uname -m)"
-            echo "OS: $(uname -s)"
-            echo "Full system info: $(uname -a)"
-            
-            # Create installation directory
-            mkdir -p ~/.local/bin
-            
-            # For Intel macs, try direct binary download as fallback
-            if [ "$(uname -m)" = "x86_64" ]; then
-              echo "Intel Mac detected - using direct binary download"
-              UV_VERSION="0.7.13"
-              curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-apple-darwin.tar.gz" -o /tmp/uv.tar.gz
-              cd /tmp && tar -xzf uv.tar.gz
-              cp uv-x86_64-apple-darwin/uv ~/.local/bin/uv
-              chmod +x ~/.local/bin/uv
-              echo "Direct UV binary installation completed"
-            else
-              echo "ARM64 Mac detected - using install script"
-              export UV_INSTALL_DIR="$HOME/.local/bin"
-              curl -LsSf https://astral.sh/uv/install.sh | sh
-              echo "Script UV installation completed"
-            fi
-            
-            # Check where UV was actually installed
-            echo "Searching for UV binary..."
-            find ~ -name "uv" -type f 2>/dev/null || echo "UV binary not found"
-            ls -la ~/.local/bin/ 2>/dev/null || echo "~/.local/bin/ does not exist"
-            ls -la ~/.cargo/bin/ 2>/dev/null || echo "~/.cargo/bin/ does not exist"
-          fi
-          
-          # Set PATH with both potential locations
-          export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-          
-          # Debug: Check UV installation
-          echo "Checking UV installation..."
-          echo "PATH: $PATH"
-          which uv || echo "UV not found in PATH"
-          uv --version || echo "UV version check failed"
-
-          # Verify UV cache directory
-          mkdir -p $UV_CACHE_DIR
-          echo "UV cache directory: $UV_CACHE_DIR"
-
-          # Install dependencies (cached)
-          echo "Installing dependencies with UV caching..."
-          uv sync --no-dev
-
-          # Install PyInstaller (cached)
-          uv add --dev pyinstaller
-
-          # Build binary with PyInstaller caching
-          echo "Building binary with PyInstaller caching..."
-          mkdir -p $PYINSTALLER_CACHE_DIR
-          uv run pyinstaller chunkhound-optimized.spec --clean --noconfirm \
-            --workpath ./build \
-            --distpath ./dist
-
-          # Create tarball
-          cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
-          cd ..
-
-          # Verify binary (ensure correct path)
+          # Verify binary
           if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-            chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
             ./dist/chunkhound-optimized/chunkhound-optimized --version
           else
             echo "❌ Binary not found at expected location"
             exit 1
           fi
 
-      # Windows: Native build with minimal setup
-      - name: Build Windows Binary (Native)
-        if: matrix.platform == 'windows'
-        shell: powershell
-        run: |
-          Write-Host "🪟 Building Windows binary..."
 
-          # Install uv
-          Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1" | Invoke-Expression
-          $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
 
-          # Install dependencies
-          uv sync --no-dev
-
-          # Install PyInstaller
-          uv add --dev pyinstaller
-
-          # Build binary
-          uv run pyinstaller chunkhound-optimized.spec --clean --noconfirm --workpath .\build --distpath .\dist
-
-          # Create zip archive
-          Compress-Archive -Path "dist\chunkhound-optimized" -DestinationPath "dist\${{ matrix.binary_name }}.zip" -Force
-
-          # Verify binary exists and basic properties
-          $binaryPath = ".\dist\chunkhound-optimized\chunkhound-optimized.exe"
-          if (Test-Path $binaryPath) {
-            $fileInfo = Get-Item $binaryPath
-            $fileSizeMB = [math]::Round($fileInfo.Length / 1MB, 2)
-            Write-Host "✅ Binary found: $($fileInfo.Name)"
-            Write-Host "📊 Size: $fileSizeMB MB"
-            Write-Host "📅 Created: $($fileInfo.CreationTime)"
-            
-            # Try to run version check, but don't fail if it has DLL issues
-            try {
-              $versionOutput = & $binaryPath --version 2>&1
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Version check: $versionOutput"
-              } else {
-                Write-Host "⚠️ Version check failed but binary exists (common on Windows)"
-              }
-            } catch {
-              Write-Host "⚠️ Could not run version check (DLL loading issue - common on Windows)"
-            }
-          } else {
-            Write-Host "❌ Binary not found"
-            exit 1
-          }
-
-      - name: Test Binary Performance (Windows)
-        if: matrix.platform == 'windows'
-        shell: powershell
-        run: |
-          Write-Host "⚡ Testing Windows binary performance..."
-          
-          # Create performance results directory
-          New-Item -ItemType Directory -Force -Path "performance-results" | Out-Null
-          
-          # Test Windows binary (handle DLL loading issues)
-          $binaryPath = "dist\chunkhound-optimized\chunkhound-optimized.exe"
-          try {
-            $versionOutput = & $binaryPath --version 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $versionOutput | Out-File -FilePath "performance-results\version-info.txt"
-              $testResult = "Binary tested successfully - version check passed"
-            } else {
-              "Version check failed but binary exists (DLL loading issue)" | Out-File -FilePath "performance-results\version-info.txt"
-              $testResult = "Binary exists but version check failed (common Windows DLL issue)"
-            }
-          } catch {
-            "Could not run binary - DLL loading issue (common on Windows)" | Out-File -FilePath "performance-results\version-info.txt"
-            $testResult = "Binary exists but could not run (Windows DLL loading issue)"
-          }
-          
-          # Simple performance summary for Windows
-          "Performance Summary for Windows:" | Out-File -FilePath "performance-results\summary.txt"
-          $testResult | Out-File -Append -FilePath "performance-results\summary.txt"
-          
-          # Get file info for performance metrics
-          if (Test-Path $binaryPath) {
-            $fileInfo = Get-Item $binaryPath
-            $fileSizeMB = [math]::Round($fileInfo.Length / 1MB, 2)
-            "Binary Size: $fileSizeMB MB" | Out-File -Append -FilePath "performance-results\summary.txt"
-          }
 
       - name: Test Binary Performance (Unix)
         if: matrix.platform != 'windows'
@@ -403,15 +196,6 @@ jobs:
             echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./performance-results/summary.txt
             echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
 
-      - name: Generate Build Info (Windows)
-        if: matrix.platform == 'windows'
-        shell: cmd
-        run: |
-          echo Generating Windows build information...
-          echo Build completed successfully > dist\BUILD_INFO_windows.txt
-          echo Platform: windows >> dist\BUILD_INFO_windows.txt
-          echo Binary: chunkhound-optimized.exe >> dist\BUILD_INFO_windows.txt
-          echo Windows build successful > dist\chunkhound-windows-amd64.sha256
 
       - name: Generate Build Info (Unix)
         if: matrix.platform != 'windows'
@@ -444,17 +228,6 @@ jobs:
             echo "No SHA256 utility found" >> ${{ matrix.binary_name }}.sha256
           fi
 
-      - name: Upload Binary Artifacts (Windows)
-        if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.binary_name }}
-          path: |
-            dist/${{ matrix.binary_name }}.zip
-            dist/${{ matrix.binary_name }}.sha256
-            dist/BUILD_INFO_${{ matrix.platform }}.txt
-            performance-results/
-          retention-days: 30
 
       - name: Upload Binary Artifacts (Unix)
         if: matrix.platform != 'windows'
