@@ -116,9 +116,9 @@ jobs:
             --load \
             .
 
-          # Extract entire PyInstaller bundle (binary + _internal directory)
+          # Extract entire PyInstaller onedir bundle
           docker create --name temp-ubuntu-$ARCH_SUFFIX chunkhound:ubuntu-build-$ARCH_SUFFIX
-          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/ ./
+          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/chunkhound-optimized ./dist/
           docker rm temp-ubuntu-$ARCH_SUFFIX
           
           # Verify binary exists and is executable
@@ -129,6 +129,8 @@ jobs:
             ls -la ./dist/chunkhound-optimized/
           else
             echo "❌ Binary not found after docker cp"
+            echo "Contents of ./dist/:"
+            ls -la ./dist/
             exit 1
           fi
 
