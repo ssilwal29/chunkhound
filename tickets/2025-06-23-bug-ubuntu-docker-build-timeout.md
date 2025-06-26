@@ -109,18 +109,17 @@ RUN apt-get update && apt-get install -y build-essential
 
 ✅ **Docker Build Fixed**: Ubuntu 20.04 + Python 3.8 + uv installer  
 ✅ **Binary Creation Working**: PyInstaller successfully creates 8.5MB binary  
-🔄 **Path Issue**: Binary copied but wrong directory structure expected  
-🔧 **Current Fix**: Debugging docker cp extraction and path handling  
+✅ **Path Issue Fixed**: Corrected workflow to handle PyInstaller onedir structure  
+🔧 **Ready for Testing**: Binary extraction and path handling resolved  
 
 **Technical Details:**
 - Docker build completes in ~2min (within target)
-- PyInstaller creates single binary file, not directory
-- Workflow expects `./dist/chunkhound-optimized/chunkhound-optimized`
-- Docker produces `./dist/chunkhound-optimized` (file)
-- Added debugging for binary extraction step
+- PyInstaller creates onedir bundle: `/app/dist/chunkhound-optimized/chunkhound-optimized`
+- Workflow updated to handle correct directory structure
+- Binary path corrected from file to directory structure
 
 **Remaining:**
-- Fix binary path handling in GitHub Actions
+- Test complete workflow end-to-end
 - Verify binary functionality
 
 ## Related Issues

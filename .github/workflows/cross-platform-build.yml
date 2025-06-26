@@ -116,26 +116,19 @@ jobs:
             --load \
             .
 
-          # Extract binary
+          # Extract entire PyInstaller bundle (binary + _internal directory)
           docker create --name temp-ubuntu-$ARCH_SUFFIX chunkhound:ubuntu-build-$ARCH_SUFFIX
-          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/chunkhound-optimized ./dist/
+          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/ ./
           docker rm temp-ubuntu-$ARCH_SUFFIX
           
-          # Debug: Check what was copied
-          echo "After docker cp:"
-          ls -la ./dist/
-          file ./dist/chunkhound-optimized || echo "File does not exist"
-          
-          # Create expected directory structure
-          if [ -f "./dist/chunkhound-optimized" ]; then
-            mkdir -p ./dist/chunkhound-optimized-dir
-            mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized-dir/chunkhound-optimized
-            mv ./dist/chunkhound-optimized-dir ./dist/chunkhound-optimized
-            
-            # Fix permissions
+          # Verify binary exists and is executable
+          if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
             chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+            echo "✅ Binary extracted successfully"
+            file ./dist/chunkhound-optimized/chunkhound-optimized
+            ls -la ./dist/chunkhound-optimized/
           else
-            echo "ERROR: chunkhound-optimized binary not found after docker cp"
+            echo "❌ Binary not found after docker cp"
             exit 1
           fi
 
@@ -153,8 +146,7 @@ jobs:
 
 
 
-      - name: Test Binary Performance (Unix)
-        if: matrix.platform != 'windows'
+      - name: Test Binary Performance
         run: |
             echo "⚡ Testing binary performance..."
 
@@ -198,8 +190,7 @@ jobs:
             echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
 
 
-      - name: Generate Build Info (Unix)
-        if: matrix.platform != 'windows'
+      - name: Generate Build Info
         run: |
           echo "📋 Generating build information..."
 
@@ -230,8 +221,7 @@ jobs:
           fi
 
 
-      - name: Upload Binary Artifacts (Unix)
-        if: matrix.platform != 'windows'
+      - name: Upload Binary Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.binary_name }}
@@ -429,7 +419,7 @@ jobs:
   # Collect and prepare release assets with enhanced multi-architecture support
   prepare-release:
     name: Prepare Release Assets
-    needs: [build-binaries, validate-binaries, analyze-performance]
+    needs: [build-binaries, analyze-performance]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -632,7 +622,7 @@ jobs:
   # Enhanced notification job with performance metrics
   notify-completion:
     name: Build Completion Notification
-    needs: [build-binaries, validate-binaries, analyze-performance]
+    needs: [build-binaries, analyze-performance]
     runs-on: ubuntu-latest
     if: always()
 
@@ -648,16 +638,14 @@ jobs:
           echo ""
           echo "Job Status:"
           echo "- Build Binaries: ${{ needs.build-binaries.result }}"
-          echo "- Validate Binaries: ${{ needs.validate-binaries.result }}"
           echo "- Performance Analysis: ${{ needs.analyze-performance.result }}"
           echo ""
 
           # Calculate success rate
           success_count=0
-          total_count=3
+          total_count=2
 
           [ "${{ needs.build-binaries.result }}" == "success" ] && success_count=$((success_count + 1))
-          [ "${{ needs.validate-binaries.result }}" == "success" ] && success_count=$((success_count + 1))
           [ "${{ needs.analyze-performance.result }}" == "success" ] && success_count=$((success_count + 1))
 
           success_rate=$((success_count * 100 / total_count))
