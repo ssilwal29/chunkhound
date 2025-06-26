@@ -7,23 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-06-26
+
 ### Added
 - 10 new language parsers: Rust, Go, C++, C, Kotlin, Groovy, Bash, TOML, Makefile, Matlab
 - Search pagination with response size limits
 - Registry-based parser architecture
 - MCP search task coordinator
 - Test coverage for file modification tracking
+- Comment and docstring indexing for all language parsers
+- Background periodic indexing for better performance
+- Path filtering support for targeted searches
+- HNSW index WAL recovery with enhanced checkpoints
+- Embedding cache optimization with CRC32-based content tracking
 
 ### Changed
-- Parser system refactored to registry pattern
+- **BREAKING**: 'run' command renamed to 'index' with current directory default
+- **BREAKING**: Parser system refactored to registry pattern
 - Centralized language support in Language enum
 - Optimized embedding performance with token-aware batching
 - Enhanced PyInstaller compatibility
+- Improved cross-platform build support (Windows, Ubuntu Docker)
+- Enhanced MCP server JSON-RPC communication with logging suppression
 
 ### Fixed
 - Parser error handling and registry integration
 - OpenAI token limit handling
 - PyInstaller module path resolution
+- Database WAL corruption issues on server exit
+- File watcher cancellation responsiveness
+- Signal handler safety by removing unsafe database operations
+- Windows PyInstaller and MATLAB dependency issues
+- Build workflow reliability across platforms
 
 ## [1.2.3] - 2025-06-23
 
@@ -117,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 For more information, visit: https://github.com/chunkhound/chunkhound
 
-[Unreleased]: https://github.com/chunkhound/chunkhound/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/chunkhound/chunkhound/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/chunkhound/chunkhound/compare/v1.2.3...v2.0.0
 [1.2.3]: https://github.com/chunkhound/chunkhound/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/chunkhound/chunkhound/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/chunkhound/chunkhound/compare/v1.2.0...v1.2.1
