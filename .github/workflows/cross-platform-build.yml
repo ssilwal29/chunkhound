@@ -118,9 +118,14 @@ jobs:
 
           # Extract entire PyInstaller onedir bundle
           docker create --name temp-ubuntu-$ARCH_SUFFIX chunkhound:ubuntu-build-$ARCH_SUFFIX
-          # Copy the chunkhound-optimized directory (contains binary + _internal)
-          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/chunkhound-optimized ./dist/
+          # Copy the entire dist content (binary + _internal)
+          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/. ./dist/
           docker rm temp-ubuntu-$ARCH_SUFFIX
+          
+          # Create proper directory structure for workflow expectations
+          mkdir -p ./dist/chunkhound-optimized
+          mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized/chunkhound-optimized
+          mv ./dist/_internal ./dist/chunkhound-optimized/
           
           # Verify binary exists and is executable
           if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
@@ -129,7 +134,7 @@ jobs:
             file ./dist/chunkhound-optimized/chunkhound-optimized
             ls -la ./dist/chunkhound-optimized/
           else
-            echo "❌ Binary not found after docker cp"
+            echo "❌ Binary not found after restructuring"
             echo "Contents of ./dist/:"
             ls -la ./dist/
             exit 1
