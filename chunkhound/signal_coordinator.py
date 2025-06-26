@@ -108,19 +108,9 @@ class SignalCoordinator:
         logger.info(f"Received termination signal ({signum})")
         self._shutdown_requested = True
 
-        # Emergency database checkpoint
-        if (self.database_manager and 
-            hasattr(self.database_manager, 'connection') and 
-            self.database_manager.connection):
-            try:
-                self.database_manager.connection.execute("CHECKPOINT")
-                # Only log in non-MCP mode to avoid JSON-RPC interference
-                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                    logger.info("Emergency checkpoint completed")
-            except Exception as e:
-                # Only log errors in non-MCP mode
-                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                    logger.error(f"Emergency checkpoint failed: {e}")
+        # NOTE: Removed unsafe checkpoint operation from signal handler
+        # Database operations in signal handlers can cause segfaults
+        # The database will be properly closed in the normal shutdown flow
 
         # Cleanup coordination files
         self.cleanup_coordination_files()
@@ -146,15 +136,9 @@ class SignalCoordinator:
             if self.database_manager and hasattr(self.database_manager, 'db_path'):
                 self._original_db_path = Path(self.database_manager.db_path)
 
-            # Force checkpoint to ensure data integrity
-            if (self.database_manager and
-                hasattr(self.database_manager, 'connection') and
-                self.database_manager.connection):
-                try:
-                    self.database_manager.connection.execute("FORCE CHECKPOINT")
-                    logger.debug("Database checkpoint completed")
-                except Exception as e:
-                    logger.warning(f"Checkpoint failed (continuing): {e}")
+            # Skip checkpoint here - let the database close() handle it
+            # Checkpointing during signal handling can cause race conditions
+            # The database provider's close() method includes proper shutdown
 
             # Disconnect database connection (preferred method)
             if hasattr(self.database_manager, 'disconnect'):
