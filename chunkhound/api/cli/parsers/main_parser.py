@@ -99,7 +99,7 @@ def add_embedding_arguments(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument(
         "--model",
-        help="Embedding model to use (defaults to provider default)",
+        help="Embedding model to use (defaults: openai=text-embedding-3-small, bge-in-icl=bge-in-icl, tei=auto-detect, openai-compatible=required)",
     )
 
     parser.add_argument(

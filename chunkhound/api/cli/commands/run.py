@@ -175,9 +175,18 @@ def _build_registry_config(args: argparse.Namespace) -> dict[str, Any]:
     }
 
     if not args.no_embeddings:
+        # Apply default models for providers that support them
+        model = args.model
+        if not model:
+            if args.provider == 'openai':
+                model = 'text-embedding-3-small'
+            elif args.provider == 'bge-in-icl':
+                model = 'bge-in-icl'
+            # tei and openai-compatible require explicit configuration
+        
         config['embedding'].update({
             'provider': args.provider,
-            'model': args.model,
+            'model': model,
             'api_key': args.api_key,
             'base_url': args.base_url,
         })

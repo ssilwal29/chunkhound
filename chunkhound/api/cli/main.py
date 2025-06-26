@@ -102,8 +102,11 @@ def validate_args(args: argparse.Namespace) -> None:
             if args.provider in ['tei', 'bge-in-icl'] and not args.base_url:
                 exit_on_validation_error(f"--base-url required for {args.provider} provider")
 
-            if args.provider not in ['tei', 'bge-in-icl'] and not args.model:
+            if args.provider == 'openai-compatible' and not args.model:
                 exit_on_validation_error(f"--model required for {args.provider} provider")
+            
+            if args.provider == 'openai-compatible' and not args.base_url:
+                exit_on_validation_error(f"--base-url required for {args.provider} provider")
 
     elif args.command == "mcp":
         # Ensure database directory exists for MCP server
