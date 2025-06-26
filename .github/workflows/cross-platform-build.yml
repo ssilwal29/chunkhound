@@ -38,12 +38,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu-x86
-            os: ubuntu-22.04
-            binary_name: chunkhound-linux-x86
-            docker_target: ubuntu-builder
-            artifact_path: dist/chunkhound-optimized
-
           - platform: ubuntu-x64
             os: ubuntu-22.04
             binary_name: chunkhound-linux-x64
@@ -108,17 +102,9 @@ jobs:
         run: |
           echo "🐧 Building Ubuntu binary with Docker..."
 
-          # Determine architecture - only x86 and x64
-          if [ "${{ matrix.platform }}" == "ubuntu-x64" ]; then
-            PLATFORM="linux/amd64"
-            ARCH_SUFFIX="x64"
-          elif [ "${{ matrix.platform }}" == "ubuntu-x86" ]; then
-            PLATFORM="linux/386"
-            ARCH_SUFFIX="x86"
-          else
-            PLATFORM="linux/amd64"
-            ARCH_SUFFIX="amd64"
-          fi
+          # Build for x64 only (Ubuntu 20.04 doesn't support x86)
+          PLATFORM="linux/amd64"
+          ARCH_SUFFIX="x64"
 
           echo "Building for platform: $PLATFORM"
 
