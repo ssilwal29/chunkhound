@@ -39,29 +39,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu
-            os: ubuntu-22.04
-            binary_name: chunkhound-linux-amd64
-            docker_target: ubuntu-builder
-            artifact_path: dist/chunkhound-optimized
+          # Temporarily disabled for debugging Windows build
+          # - platform: ubuntu
+          #   os: ubuntu-22.04
+          #   binary_name: chunkhound-linux-amd64
+          #   docker_target: ubuntu-builder
+          #   artifact_path: dist/chunkhound-optimized
 
-          - platform: macos
-            os: macos-13 # Intel
-            binary_name: chunkhound-macos-amd64
-            docker_target: "" # Native build
-            artifact_path: dist/chunkhound-optimized
+          # - platform: macos
+          #   os: macos-13 # Intel
+          #   binary_name: chunkhound-macos-amd64
+          #   docker_target: "" # Native build
+          #   artifact_path: dist/chunkhound-optimized
 
-          - platform: macos-arm64
-            os: macos-15 # Apple Silicon (updated to latest)
-            binary_name: chunkhound-macos-arm64
-            docker_target: "" # Native build
-            artifact_path: dist/chunkhound-optimized
+          # - platform: macos-arm64
+          #   os: macos-15 # Apple Silicon (updated to latest)
+          #   binary_name: chunkhound-macos-arm64
+          #   docker_target: "" # Native build
+          #   artifact_path: dist/chunkhound-optimized
 
-          - platform: ubuntu-arm64
-            os: ubuntu-22.04
-            binary_name: chunkhound-linux-arm64
-            docker_target: ubuntu-builder
-            artifact_path: dist/chunkhound-optimized
+          # - platform: ubuntu-arm64
+          #   os: ubuntu-22.04
+          #   binary_name: chunkhound-linux-arm64
+          #   docker_target: ubuntu-builder
+          #   artifact_path: dist/chunkhound-optimized
 
           - platform: windows
             os: windows-latest
