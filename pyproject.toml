@@ -51,7 +51,7 @@ dependencies = [
     "tree-sitter-bash>=0.21.0",
     "tree-sitter-c>=0.21.0,<0.23.0",
     "tree-sitter-cpp>=0.21.0,<0.24.0",
-    # "tree-sitter-matlab>=1.0.6",  # Temporarily disabled due to Windows package corruption
+    # "tree-sitter-matlab>=1.0.5,!=1.0.6",  # Using tree-sitter-language-pack instead
 ]
 
 [project.optional-dependencies]
