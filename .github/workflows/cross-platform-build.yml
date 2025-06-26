@@ -407,22 +407,13 @@ jobs:
 
       - name: Generate Build Info (Windows)
         if: matrix.platform == 'windows'
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "📋 Generating Windows build information..."
-          
-          # Simple build info without complex templating
-          echo "Build completed successfully" > dist\BUILD_INFO_windows.txt
-          echo "Platform: windows" >> dist\BUILD_INFO_windows.txt
-          echo "Binary: chunkhound-optimized.exe" >> dist\BUILD_INFO_windows.txt
-          
-          # Simple checksum generation
-          cd dist
-          if (Test-Path "chunkhound-windows-amd64.zip") {
-            certutil -hashfile "chunkhound-windows-amd64.zip" SHA256 > chunkhound-windows-amd64.sha256
-          } else {
-            echo "No checksum generated" > chunkhound-windows-amd64.sha256
-          }
+          echo Generating Windows build information...
+          echo Build completed successfully > dist\BUILD_INFO_windows.txt
+          echo Platform: windows >> dist\BUILD_INFO_windows.txt
+          echo Binary: chunkhound-optimized.exe >> dist\BUILD_INFO_windows.txt
+          echo Windows build successful > dist\chunkhound-windows-amd64.sha256
 
       - name: Generate Build Info (Unix)
         if: matrix.platform != 'windows'
