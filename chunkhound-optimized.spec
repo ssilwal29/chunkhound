@@ -26,7 +26,6 @@ hiddenimports = [
     'chunkhound.signal_coordinator',
     'chunkhound.file_watcher',
     'chunkhound.core.config',
-    'core.types',
     'core.types.common',
     'registry',  # Fixed: should be 'registry', not 'chunkhound.registry'
     
@@ -60,7 +59,7 @@ hiddenimports = [
     'providers.parsing.groovy_parser',
     'providers.parsing.bash_parser',
     'providers.parsing.toml_parser',
-    'providers.parsing.matlab_parser',
+    # 'providers.parsing.matlab_parser',  # Temporarily disabled due to Windows package corruption
     'providers.parsing.makefile_parser',
     'providers.parsing.text_parser',
 
