@@ -12,7 +12,7 @@ uv tool install chunkhound
 ```
 
 ### Binary
-Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - zero dependencies required.
+Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - zero dependencies required. Recommended for Ubuntu 20.04+ or if you have installation issues on Windows.
 
 ## Quick Start
 
@@ -414,7 +414,7 @@ export CHUNKHOUND_BASE_URL="http://localhost:11434"
 
 ChunkHound prioritizes data security through a local-first architecture:
 
-- **Local database**: All code chunks stored in local SQLite/DuckDB - no data sent to external servers
+- **Local database**: All code chunks stored in local DuckDB - no data sent to external servers
 - **Local embeddings**: Supports self-hosted embedding servers (Ollama, LocalAI, TEI) for complete data isolation
 - **MCP over stdio**: Uses standard input/output for AI assistant communication - no network exposure
 - **No authentication complexity**: Zero auth required since everything runs locally on your machine
@@ -430,7 +430,7 @@ Your code never leaves your environment unless you explicitly configure external
 
 **Three-tier indexing system for complete coverage:**
 
-1. **Pre-index**: `chunkhound index` - Incrementally updates database by reusing unchanged embeddings. Can be run periodically (cron, CI/CD, server) and the resulting database shared across teams for secure enterprise workflows
+1. **Pre-index**: `chunkhound index` - Synchronizes database with current code state by adding new files, removing deleted files, and updating only changed content. Reuses existing embeddings for unchanged code, making re-indexing fast and cost-effective. Can be run periodically (cron, CI/CD, server) and the resulting database shared across teams for secure enterprise workflows
 2. **Background scan**: MCP server runs periodic scans every 5 minutes to catch any missed changes  
 3. **Real-time updates**: File system events trigger immediate re-indexing of changed files
 
@@ -440,6 +440,41 @@ Your code never leaves your environment unless you explicitly configure external
 3. **Index** - Stores code chunks in local DuckDB database
 4. **Embed** - Creates AI embeddings for semantic search
 5. **Search** - AI assistants query via MCP protocol
+
+## Priority Queue System
+
+ChunkHound uses an internal priority queue to ensure optimal responsiveness and data consistency:
+
+**Priority Order (highest to lowest):**
+1. **User queries** - Search requests from AI assistants get immediate processing
+2. **File system events** - Real-time file changes are processed next for quick updates
+3. **Background search** - Periodic scans run when system is idle
+
+This design ensures that user interactions remain fast and responsive while maintaining up-to-date search results. The queue prevents background operations from interfering with active search requests, while file system events are prioritized to keep the index current with your latest code changes.
+
+## Caching System
+
+ChunkHound uses smart caching to avoid redundant work:
+
+**File change detection:**
+- Checks file modification time first, then content checksums
+- Unchanged files skip all processing
+- Persistent tracking across restarts
+
+**Parse tree caching:**
+- Stores parsed code structures in memory
+- Reuses existing parsing results when files haven't changed
+- Automatic cleanup of outdated entries
+
+**Directory scanning cache:**
+- Remembers file discovery results temporarily
+- Avoids re-scanning unchanged directories
+- Refreshes when directories are modified
+
+This layered approach ensures ChunkHound only processes what actually changed, making indexing fast and efficient even for large codebases.
+
+**Database synchronization:**
+Running `chunkhound index` acts as a "fix" command that brings your database into perfect sync with your current codebase. It handles all inconsistencies by adding missing files, removing orphaned entries for deleted files, and updating only the content that actually changed. Expensive embedding generation is skipped for unchanged code chunks, making full re-indexing surprisingly fast and cost-effective.
 
 *Note: ChunkHound currently uses DuckDB. Support for other local and remote databases is planned.*
 
