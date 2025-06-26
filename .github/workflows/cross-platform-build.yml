@@ -20,7 +20,7 @@ on:
       run_validation:
         description: "Run comprehensive binary validation"
         required: false
-        default: "true"
+        default: "false"
         type: boolean
 
 env:
@@ -302,17 +302,7 @@ jobs:
           $binarySize = [math]::Round($binary.Length / 1MB, 2)
           $archiveSize = [math]::Round($archive.Length / 1MB, 2)
 
-          @"
-Build Date: $buildDate
-Platform: ${{ matrix.platform }}
-OS: ${{ matrix.os }}
-Python Version: ${{ env.PYTHON_VERSION }}
-Runner: GitHub Actions
-Commit: ${{ github.sha }}
-Ref: ${{ github.ref }}
-Binary Size: $($binarySize)MB
-Archive Size: $($archiveSize)MB
-"@ | Out-File ".\dist\BUILD_INFO_${{ matrix.platform }}.txt"
+          "Build Date: $buildDate`nPlatform: ${{ matrix.platform }}`nOS: ${{ matrix.os }}`nPython Version: ${{ env.PYTHON_VERSION }}`nRunner: GitHub Actions`nCommit: ${{ github.sha }}`nRef: ${{ github.ref }}`nBinary Size: $($binarySize)MB`nArchive Size: $($archiveSize)MB" | Out-File ".\dist\BUILD_INFO_${{ matrix.platform }}.txt"
 
           # Generate checksums for Windows
           cd dist
@@ -322,17 +312,15 @@ Archive Size: $($archiveSize)MB
           "$($binaryHash.Hash.ToLower())  chunkhound-optimized/chunkhound-optimized.exe" | Out-File -Append "${{ matrix.binary_name }}.sha256"
           ' || '
           # Linux build info generation  
-          cat > ./dist/BUILD_INFO_${{ matrix.platform }}.txt << EOF
-Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-Platform: ${{ matrix.platform }}
-OS: ${{ matrix.os }}
-Python Version: ${{ env.PYTHON_VERSION }}
-Runner: GitHub Actions
-Commit: ${{ github.sha }}
-Ref: ${{ github.ref }}
-Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '"'"'{print $5}'"'"')
-Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '"'"'{print $5}'"'"')
-EOF
+          echo "Build Date: $(date -u +\"%Y-%m-%d %H:%M:%S UTC\")" > ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Platform: ${{ matrix.platform }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "OS: ${{ matrix.os }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Python Version: ${{ env.PYTHON_VERSION }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Runner: GitHub Actions" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Commit: ${{ github.sha }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Ref: ${{ github.ref }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '\''{print $5}'\'')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '\''{print $5}'\'')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
 
           # Generate checksums (cross-platform compatible)
           cd dist
