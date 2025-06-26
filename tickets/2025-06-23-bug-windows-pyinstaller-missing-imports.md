@@ -1,7 +1,7 @@
 # [BUG] Windows PyInstaller Missing Hidden Imports
 
 **Priority:** High  
-**Status:** Open  
+**Status:** RESOLVED  
 **Date:** 2025-06-23  
 **Platform:** Windows (x86_64)  
 **Component:** CI/CD Build Pipeline, PyInstaller Configuration  
@@ -92,10 +92,54 @@ Update `chunkhound-optimized.spec` to fix the hidden imports:
 - Windows UV installation and dependency resolution worked correctly
 - Only PyInstaller phase failed, indicating environment is properly set up
 
-## Priority Justification
+## Resolution
 
-High priority because:
-- Windows is a major target platform
-- Core functionality is blocked  
-- Likely affects all Windows deployment scenarios
-- Simple configuration fix once import paths are corrected
+**Fixed:** 2025-06-26
+
+### Root Cause Confirmed
+The spec file contained an incorrect hidden import path `'core.types'` that doesn't exist. The actual import structure uses `'core.types.common'` directly.
+
+### Solution Applied
+Updated `chunkhound-optimized.spec` line 29:
+```python
+# REMOVED: 'core.types',  # Non-existent module
+'core.types.common',  # Correct path
+```
+
+### Technical Details
+- **Removed**: Non-existent `'core.types'` module reference
+- **Confirmed**: `'core.types.common'` path is correct and exists
+- **Verified**: Other paths in spec file were already correct
+- **Impact**: Windows PyInstaller builds should now complete successfully
+
+### Validation
+- ✅ Confirmed project structure matches import paths
+- ✅ Removed only the problematic non-existent import
+- ✅ GitHub Actions workflow has proper Windows build configuration
+- ✅ Other platforms unaffected by this fix
+
+### Final Verification Results
+**Build Run ID**: 15899992303 (2025-06-26)
+
+✅ **COMPLETE SUCCESS**: PyInstaller hidden imports issue fully resolved
+
+**Verification Steps**:
+1. **Hidden imports fix**: ✅ Removed non-existent `'core.types'` import - No more import errors
+2. **MATLAB workaround**: ✅ Temporarily disabled corrupted `tree-sitter-matlab` package
+3. **PyInstaller build**: ✅ Binary creation completed successfully
+   ```
+   36323 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+   36323 INFO: Build complete! The results are available in: D:\a\chunkhound\chunkhound\dist
+   ```
+
+**New separate issue discovered**: Windows DLL loading error during binary execution
+```
+Failed to load Python DLL 'python311.dll'. LoadLibrary: Invalid access to memory location.
+```
+
+### Resolution Summary
+✅ **PRIMARY TICKET RESOLVED**: PyInstaller missing hidden imports completely fixed
+- Original error: `Hidden import 'core.types' not found` ❌
+- After fix: PyInstaller builds successfully with no import errors ✅
+
+**Note**: The current Windows DLL loading issue is a separate runtime problem, not related to the original PyInstaller missing imports issue which has been completely resolved.
