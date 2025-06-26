@@ -405,7 +405,57 @@ jobs:
             echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./performance-results/summary.txt
             echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
 
-      - name: Generate Build Info
+      - name: Generate Build Info (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          Write-Host "📋 Generating Windows build information..."
+          
+          $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
+          $binaryPath = "dist\chunkhound-optimized\chunkhound-optimized.exe"
+          $archivePath = "dist\${{ matrix.binary_name }}.zip"
+          
+          $binarySize = "N/A"
+          $archiveSize = "N/A"
+          
+          if (Test-Path $binaryPath) {
+            $binaryInfo = Get-Item $binaryPath
+            $binarySize = "$([math]::Round($binaryInfo.Length / 1MB, 2)) MB"
+          }
+          
+          if (Test-Path $archivePath) {
+            $archiveInfo = Get-Item $archivePath
+            $archiveSize = "$([math]::Round($archiveInfo.Length / 1MB, 2)) MB"
+          }
+          
+          $buildInfo = @"
+          Build Date: $buildDate
+          Platform: ${{ matrix.platform }}
+          OS: ${{ matrix.os }}
+          Python Version: ${{ env.PYTHON_VERSION }}
+          Runner: GitHub Actions
+          Commit: ${{ github.sha }}
+          Ref: ${{ github.ref }}
+          Binary Size: $binarySize
+          Archive Size: $archiveSize
+          "@
+          
+          $buildInfo | Out-File -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          
+          # Generate checksums for Windows
+          Set-Location dist
+          try {
+            $archiveHash = Get-FileHash "${{ matrix.binary_name }}.zip" -Algorithm SHA256
+            $binaryHash = Get-FileHash "chunkhound-optimized\chunkhound-optimized.exe" -Algorithm SHA256
+            
+            "$($archiveHash.Hash.ToLower()) *${{ matrix.binary_name }}.zip" | Out-File -FilePath "${{ matrix.binary_name }}.sha256" -Encoding ASCII
+            "$($binaryHash.Hash.ToLower()) *chunkhound-optimized/chunkhound-optimized.exe" | Out-File -Append -FilePath "${{ matrix.binary_name }}.sha256" -Encoding ASCII
+          } catch {
+            "Could not generate checksums" | Out-File -FilePath "${{ matrix.binary_name }}.sha256" -Encoding ASCII
+          }
+
+      - name: Generate Build Info (Unix)
+        if: matrix.platform != 'windows'
         run: |
           echo "📋 Generating build information..."
 
