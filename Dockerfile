@@ -11,16 +11,23 @@ ARG BUILDPLATFORM
 # =============================================================================
 # Stage 1: Base Builder - Common dependencies and setup
 # =============================================================================
-FROM ubuntu:16.04 AS base-builder
+FROM ubuntu:20.04 AS base-builder
 
 # Print platform information for debugging
 RUN echo "Building for: $TARGETPLATFORM on $BUILDPLATFORM"
 
-# Install system dependencies and Python 3.10
+# Set timezone to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Install system dependencies and Python 3.10 from deadsnakes PPA
 RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
     python3.10 \
     python3.10-dev \
-    python3-pip \
+    python3.10-distutils \
     build-essential \
     gcc \
     g++ \
@@ -29,6 +36,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     file \
     && rm -rf /var/lib/apt/lists/*
+
+# Install pip for Python 3.10
+RUN curl https://bootstrap.pypa.io/get-pip.py | python3.10
 
 # Install uv for fast Python package management
 RUN python3.10 -m pip install uv
@@ -168,10 +178,17 @@ CMD ["uv", "run", "python", "-m", "chunkhound.cli", "mcp", "--help"]
 # =============================================================================
 # Stage 6: Runtime Environment - Minimal runtime for the binary
 # =============================================================================
-FROM ubuntu:16.04 AS runtime
+FROM ubuntu:20.04 AS runtime
+
+# Set timezone to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
 
 # Install minimal runtime dependencies
 RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
     ca-certificates \
     python3.10 \
     && rm -rf /var/lib/apt/lists/*
