@@ -119,14 +119,15 @@ jobs:
           # Extract entire PyInstaller onedir bundle
           docker create --name temp-ubuntu-$ARCH_SUFFIX chunkhound:ubuntu-build-$ARCH_SUFFIX
           docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/chunkhound-optimized ./dist/
+          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/_internal ./dist/
           docker rm temp-ubuntu-$ARCH_SUFFIX
           
           # Verify binary exists and is executable
-          if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-            chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+          if [ -f "./dist/chunkhound-optimized" ]; then
+            chmod +x ./dist/chunkhound-optimized
             echo "✅ Binary extracted successfully"
-            file ./dist/chunkhound-optimized/chunkhound-optimized
-            ls -la ./dist/chunkhound-optimized/
+            file ./dist/chunkhound-optimized
+            ls -la ./dist/
           else
             echo "❌ Binary not found after docker cp"
             echo "Contents of ./dist/:"
@@ -134,12 +135,12 @@ jobs:
             exit 1
           fi
 
-          # Create tarball
-          cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
+          # Create tarball with proper onedir structure
+          cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized _internal/
 
           # Verify binary
-          if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-            ./dist/chunkhound-optimized/chunkhound-optimized --version
+          if [ -f "./dist/chunkhound-optimized" ]; then
+            ./dist/chunkhound-optimized --version
           else
             echo "❌ Binary not found at expected location"
             exit 1
@@ -156,38 +157,38 @@ jobs:
             mkdir -p ./performance-results
 
             # Verify binary exists and is executable
-            if [ ! -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
+            if [ ! -f "./dist/chunkhound-optimized" ]; then
               echo "❌ Binary not found for performance testing"
               exit 1
             fi
             
             # Ensure binary is executable
-            chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+            chmod +x ./dist/chunkhound-optimized
 
             # Startup time test with measurements
             echo "Testing startup time..."
             for i in {1..5}; do
               echo "Run $i:"
-              { time ./dist/chunkhound-optimized/chunkhound-optimized --help > /dev/null; } 2>> ./performance-results/startup-times.txt
+              { time ./dist/chunkhound-optimized --help > /dev/null; } 2>> ./performance-results/startup-times.txt
             done
 
             # Binary size analysis
             echo "Binary size analysis:"
-            ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | tee ./performance-results/binary-size.txt
-            du -sh ./dist/chunkhound-optimized/ | tee -a ./performance-results/binary-size.txt
+            ls -lh ./dist/chunkhound-optimized | tee ./performance-results/binary-size.txt
+            du -sh ./dist/ | tee -a ./performance-results/binary-size.txt
 
             # Archive size
             ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | tee -a ./performance-results/binary-size.txt
 
             # Basic functionality test
             echo "Testing basic functionality..."
-            ./dist/chunkhound-optimized/chunkhound-optimized --version | tee ./performance-results/version-info.txt
-            ./dist/chunkhound-optimized/chunkhound-optimized config --help > /dev/null
+            ./dist/chunkhound-optimized --version | tee ./performance-results/version-info.txt
+            ./dist/chunkhound-optimized config --help > /dev/null
 
             # Performance summary
             echo "Performance Summary for ${{ matrix.platform }}:" > ./performance-results/summary.txt
             echo "================================" >> ./performance-results/summary.txt
-            echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')" >> ./performance-results/summary.txt
+            echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized | awk '{print $5}')" >> ./performance-results/summary.txt
             echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./performance-results/summary.txt
             echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
 
@@ -204,7 +205,7 @@ jobs:
           Runner: GitHub Actions
           Commit: ${{ github.sha }}
           Ref: ${{ github.ref }}
-          Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')
+          Binary Size: $(ls -lh ./dist/chunkhound-optimized | awk '{print $5}')
           Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')
           EOF
 
@@ -213,7 +214,7 @@ jobs:
           if command -v sha256sum >/dev/null 2>&1; then
             # Linux
             sha256sum ${{ matrix.binary_name }}.tar.gz > ${{ matrix.binary_name }}.sha256
-            sha256sum chunkhound-optimized/chunkhound-optimized >> ${{ matrix.binary_name }}.sha256
+            sha256sum chunkhound-optimized >> ${{ matrix.binary_name }}.sha256
           elif command -v shasum >/dev/null 2>&1; then
             # macOS
             shasum -a 256 ${{ matrix.binary_name }}.tar.gz > ${{ matrix.binary_name }}.sha256
@@ -238,7 +239,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.binary_name }}-directory
-          path: dist/chunkhound-optimized/
+          path: |
+            dist/chunkhound-optimized
+            dist/_internal/
           retention-days: 7
 
   # Comprehensive validation job with caching
