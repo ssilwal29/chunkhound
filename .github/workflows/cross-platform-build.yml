@@ -145,7 +145,7 @@ jobs:
           fi
 
           # Create tarball
-          cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
+          cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/ && cd ..
 
           # Verify binary
           if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
