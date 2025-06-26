@@ -624,19 +624,23 @@ class FileWatcherManager:
 
         while True:
             try:
-                # Wait for events and process them in batches
-                await asyncio.sleep(1.0)  # Process every second
-                loop_count += 1
-
-                if loop_count % 30 == 0:  # Log every 30 seconds
-                    queue_size = self.event_queue.qsize() if self.event_queue else 0
-                    logger.info(f"🔄 Queue processing loop active - queue size: {queue_size}")
-
+                # Process queue if items exist
                 if self.event_queue and not self.event_queue.empty():
                     queue_size = self.event_queue.qsize()
                     logger.info(f"📋 Processing queue with {queue_size} events")
                     await process_file_change_queue(self.event_queue, process_callback)
                     logger.info("✅ Queue processing batch completed")
+                
+                # Use wait_for to allow checking for cancellation more responsively
+                try:
+                    await asyncio.wait_for(asyncio.sleep(1.0), timeout=1.0)
+                except asyncio.TimeoutError:
+                    pass
+                
+                loop_count += 1
+                if loop_count % 30 == 0:  # Log every 30 seconds
+                    queue_size = self.event_queue.qsize() if self.event_queue else 0
+                    logger.info(f"🔄 Queue processing loop active - queue size: {queue_size}")
 
             except asyncio.CancelledError:
                 logger.info("🛑 Queue processing loop cancelled")
@@ -644,7 +648,10 @@ class FileWatcherManager:
             except Exception as e:
                 # Continue processing even if individual batches fail
                 logger.error(f"❌ Queue processing loop error: {e}")
-                await asyncio.sleep(5.0)  # Back off on errors
+                try:
+                    await asyncio.wait_for(asyncio.sleep(5.0), timeout=5.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    break
 
     async def cleanup(self):
         """Clean up resources and stop filesystem watching."""
