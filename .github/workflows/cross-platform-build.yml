@@ -121,13 +121,23 @@ jobs:
           docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/chunkhound-optimized ./dist/
           docker rm temp-ubuntu-$ARCH_SUFFIX
           
-          # Create expected directory structure
-          mkdir -p ./dist/chunkhound-optimized-dir
-          mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized-dir/chunkhound-optimized
-          mv ./dist/chunkhound-optimized-dir ./dist/chunkhound-optimized
+          # Debug: Check what was copied
+          echo "After docker cp:"
+          ls -la ./dist/
+          file ./dist/chunkhound-optimized || echo "File does not exist"
           
-          # Fix permissions
-          chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+          # Create expected directory structure
+          if [ -f "./dist/chunkhound-optimized" ]; then
+            mkdir -p ./dist/chunkhound-optimized-dir
+            mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized-dir/chunkhound-optimized
+            mv ./dist/chunkhound-optimized-dir ./dist/chunkhound-optimized
+            
+            # Fix permissions
+            chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+          else
+            echo "ERROR: chunkhound-optimized binary not found after docker cp"
+            exit 1
+          fi
 
           # Create tarball
           cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
