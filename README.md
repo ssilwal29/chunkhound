@@ -34,6 +34,26 @@ uv run chunkhound index --db /path/to/my-chunks.db
 uv run chunkhound mcp --db /path/to/my-chunks.db
 ```
 
+## AI Agent Installation (Recommended)
+
+The easiest way to install and configure ChunkHound is to use your AI assistant. Simply copy and paste this prompt:
+
+```
+- Check the current OS type and version.
+- Detect what IDE and agent versions are you running in.
+- Read https://raw.githubusercontent.com/ofriw/chunkhound/refs/heads/main/README.md
+- Install and configure ChunkHound for the current IDE and agent:
+    - If using Ubuntu 20 with python < 3.10, prefer the prebuilt onedir binary
+    - Edit the current IDE / agent's config files to configure chunkhound as an MCP server. See instructions in the README
+
+Start by asking the user:
+1. What embeddings provider would they like to use? Suggest from the list of supported providers.
+2. Based on the user's response, ask for the relevant configuration parameters
+3. Proceed with the configuration based on the user's input
+```
+
+Your AI assistant will automatically detect your environment, install ChunkHound, and configure it for your specific IDE and embedding provider preferences.
+
 ## AI Assistant Setup
 
 ChunkHound integrates with all major AI development tools. Choose your setup method:
