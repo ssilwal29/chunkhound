@@ -123,9 +123,10 @@ jobs:
           docker rm temp-ubuntu-$ARCH_SUFFIX
           
           # Create proper directory structure for workflow expectations
-          mkdir -p ./dist/chunkhound-optimized
-          mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized/chunkhound-optimized
-          mv ./dist/_internal ./dist/chunkhound-optimized/
+          mkdir -p ./dist/chunkhound-optimized-dir
+          mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized-dir/chunkhound-optimized
+          mv ./dist/_internal ./dist/chunkhound-optimized-dir/
+          mv ./dist/chunkhound-optimized-dir ./dist/chunkhound-optimized
           
           # Verify binary exists and is executable
           if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
