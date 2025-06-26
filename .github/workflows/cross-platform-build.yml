@@ -280,9 +280,9 @@ jobs:
           # Performance summary
           echo "Performance Summary for ${{ matrix.platform }}:" > ./performance-results/summary.txt
           echo "================================" >> ./performance-results/summary.txt
-          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '"'"'{print $5}'"'"')" >> ./performance-results/summary.txt
-          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '"'"'{print $5}'"'"')" >> ./performance-results/summary.txt
-          echo "Average Startup Time: $(awk '"'"'/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}'"'"' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
+          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')" >> ./performance-results/summary.txt
+          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./performance-results/summary.txt
+          echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
           ' }}
 
 
@@ -319,8 +319,8 @@ jobs:
           echo "Runner: GitHub Actions" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
           echo "Commit: ${{ github.sha }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
           echo "Ref: ${{ github.ref }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '\''{print $5}'\'')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '\''{print $5}'\'')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
+          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
 
           # Generate checksums (cross-platform compatible)
           cd dist
