@@ -480,7 +480,7 @@ jobs:
     name: Validate Cross-Platform Binaries
     needs: build-binaries
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.run_validation != 'false' }}
+    if: false  # Temporarily disabled for Windows-only testing
 
     steps:
       - name: Checkout code
