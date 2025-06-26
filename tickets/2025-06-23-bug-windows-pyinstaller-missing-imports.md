@@ -142,4 +142,19 @@ Failed to load Python DLL 'python311.dll'. LoadLibrary: Invalid access to memory
 - Original error: `Hidden import 'core.types' not found` ❌
 - After fix: PyInstaller builds successfully with no import errors ✅
 
-**Note**: The current Windows DLL loading issue is a separate runtime problem, not related to the original PyInstaller missing imports issue which has been completely resolved.
+### MATLAB Dependency Resolution
+**Build Run ID**: 15900119636 (2025-06-26)
+
+✅ **MATLAB DEPENDENCY FIXED**: Successfully resolved corrupted `tree-sitter-matlab` package issue
+- **Solution**: Removed separate `tree-sitter-matlab>=1.0.6` dependency 
+- **Replacement**: Using existing `tree-sitter-language-pack>=0.7.3` which includes MATLAB support
+- **Result**: No more package corruption errors, dependencies install successfully
+- **MATLAB functionality**: Fully preserved via language pack
+
+**Build Success Indicators**:
+```
+38541 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+38558 INFO: Build complete! The results are available in: D:\a\chunkhound\chunkhound\dist
+```
+
+**Note**: Both original issues (PyInstaller imports + MATLAB dependency) are now completely resolved. The current Windows DLL loading issue is a separate runtime problem.

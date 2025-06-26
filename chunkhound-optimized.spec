@@ -59,7 +59,7 @@ hiddenimports = [
     'providers.parsing.groovy_parser',
     'providers.parsing.bash_parser',
     'providers.parsing.toml_parser',
-    # 'providers.parsing.matlab_parser',  # Temporarily disabled due to Windows package corruption
+    'providers.parsing.matlab_parser',
     'providers.parsing.makefile_parser',
     'providers.parsing.text_parser',
 
