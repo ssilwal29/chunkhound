@@ -107,3 +107,18 @@ Comprehensive QA testing of semantic_search and regex_search MCP tools (2025-06-
 
 ## Reporter
 QA Testing System
+
+## Root Cause
+Missing dependency: `tree-sitter-bash` was not listed in `pyproject.toml` dependencies. The BashParser crashes during initialization when the dependency is not available, preventing parser registration.
+
+## Fix Applied
+Added `tree-sitter-bash>=0.21.0` to the dependencies in `pyproject.toml`. This allows the BashParser to initialize successfully using the direct tree-sitter-bash package.
+
+## Verification
+- Bash parser now initializes successfully (using language pack fallback)
+- Makefile parser continues to work correctly
+- Test files with unique markers are properly indexed
+- Both file types are searchable via regex and semantic search
+
+## Status
+**RESOLVED** - Both Bash and Makefile files are now being indexed correctly.
