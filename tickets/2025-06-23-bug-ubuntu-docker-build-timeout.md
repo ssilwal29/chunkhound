@@ -1,7 +1,7 @@
 # [BUG] Ubuntu Docker Build Performance and Timeout Issues
 
 **Priority:** Medium  
-**Status:** Resolved  
+**Status:** In Progress  
 **Date:** 2025-06-23  
 **Platform:** Ubuntu x86_64 and ARM64  
 **Component:** CI/CD Build Pipeline, Docker Configuration  
@@ -98,24 +98,30 @@ RUN apt-get update && apt-get install -y build-essential
 4. **Simplified Docker build process** removing complex caching for faster builds
 5. **Removed ARM64 and x86 support** (Ubuntu 20.04 dropped 32-bit support)
 
-**Key Configuration Changes:**
-- Base image: `ubuntu:20.04` (enables Python 3.8 by default)
-- Build targets: `ubuntu-x64` (linux/amd64) only
-- Removed: Windows, macOS, ARM64, and x86 builds
-- Simplified: Docker build without deadsnakes PPA or complex dependencies
+**Final Configuration:**
+- Base: `ubuntu:20.04` + Python 3.8 + uv official installer
+- Target: `ubuntu-x64` (linux/amd64) only  
+- Removed: Windows, macOS, ARM64, x86 builds
+- Build time: ~2min (meets < 3min target)
+- Binary size: 8.5MB
 
-## Testing Completed
+## Progress Update
 
-✅ **Workflow Configuration Updated**  
-✅ **Docker Build Simplified**  
-✅ **Ubuntu 20.04 Base Image Configured**  
-✅ **x64 Architecture Support Added** (x86 removed due to Ubuntu 20.04 limitations)  
-✅ **Non-Ubuntu Builds Disabled**
+✅ **Docker Build Fixed**: Ubuntu 20.04 + Python 3.8 + uv installer  
+✅ **Binary Creation Working**: PyInstaller successfully creates 8.5MB binary  
+🔄 **Path Issue**: Binary copied but wrong directory structure expected  
+🔧 **Current Fix**: Debugging docker cp extraction and path handling  
 
-**Next Steps:**
-- Run CI pipeline to verify build success
-- Monitor build times (target: < 3 minutes)
-- Validate binary functionality on target Ubuntu versions
+**Technical Details:**
+- Docker build completes in ~2min (within target)
+- PyInstaller creates single binary file, not directory
+- Workflow expects `./dist/chunkhound-optimized/chunkhound-optimized`
+- Docker produces `./dist/chunkhound-optimized` (file)
+- Added debugging for binary extraction step
+
+**Remaining:**
+- Fix binary path handling in GitHub Actions
+- Verify binary functionality
 
 ## Related Issues
 
