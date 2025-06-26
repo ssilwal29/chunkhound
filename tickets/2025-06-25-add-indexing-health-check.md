@@ -2,7 +2,7 @@
 
 **Priority**: Medium  
 **Status**: Open  
-**Created**: 2025-06-25  
+**Created**: 2025-06-25
 
 ## Issue
 No way to verify if file indexing is working properly. QA testing revealed silent failures in language parsing and semantic indexing.
