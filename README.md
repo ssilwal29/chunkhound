@@ -11,8 +11,8 @@ Transform your codebase into a searchable knowledge base. ChunkHound provides AI
 uv tool install chunkhound
 ```
 
-### Binary
-Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - zero dependencies required. Recommended for Ubuntu 20.04+ or if you have installation issues on Windows.
+### Binary (Fallback Option)
+Download from [GitHub Releases](https://github.com/ofriw/chunkhound/releases) - zero dependencies required. Use only if you encounter Python/uv installation issues on Ubuntu 20.04 or Windows.
 
 ## Quick Start
 
@@ -170,9 +170,9 @@ Go to Settings > Tools > AI Assistant > Model Context Protocol (MCP) and add:
 </details>
 
 <details>
-<summary><strong>Method 2: Using Standalone Binary</strong></summary>
+<summary><strong>Method 2: Using Standalone Binary (Fallback)</strong></summary>
 
-First, install the binary from [GitHub Releases](https://github.com/ofriw/chunkhound/releases).
+Use this method only if you encounter Python/uv installation issues. First, install the binary from [GitHub Releases](https://github.com/ofriw/chunkhound/releases).
 
 <details>
 <summary><strong>Claude Desktop</strong></summary>
