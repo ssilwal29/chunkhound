@@ -428,28 +428,31 @@ jobs:
             $archiveSize = "$([math]::Round($archiveInfo.Length / 1MB, 2)) MB"
           }
           
-          $buildInfo = @"
-          Build Date: $buildDate
-          Platform: ${{ matrix.platform }}
-          OS: ${{ matrix.os }}
-          Python Version: ${{ env.PYTHON_VERSION }}
-          Runner: GitHub Actions
-          Commit: ${{ github.sha }}
-          Ref: ${{ github.ref }}
-          Binary Size: $binarySize
-          Archive Size: $archiveSize
-          "@
-          
-          $buildInfo | Out-File -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          # Write build info line by line to avoid PowerShell here-string issues
+          "Build Date: $buildDate" | Out-File -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "Platform: ${{ matrix.platform }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "OS: ${{ matrix.os }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "Python Version: ${{ env.PYTHON_VERSION }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "Runner: GitHub Actions" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "Commit: ${{ github.sha }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "Ref: ${{ github.ref }}" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "Binary Size: $binarySize" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
+          "Archive Size: $archiveSize" | Out-File -Append -FilePath "dist\BUILD_INFO_${{ matrix.platform }}.txt" -Encoding UTF8
           
           # Generate checksums for Windows
           Set-Location dist
           try {
-            $archiveHash = Get-FileHash "${{ matrix.binary_name }}.zip" -Algorithm SHA256
+            $archiveName = "${{ matrix.binary_name }}.zip"
+            $checksumFile = "${{ matrix.binary_name }}.sha256"
+            
+            $archiveHash = Get-FileHash $archiveName -Algorithm SHA256
             $binaryHash = Get-FileHash "chunkhound-optimized\chunkhound-optimized.exe" -Algorithm SHA256
             
-            "$($archiveHash.Hash.ToLower()) *${{ matrix.binary_name }}.zip" | Out-File -FilePath "${{ matrix.binary_name }}.sha256" -Encoding ASCII
-            "$($binaryHash.Hash.ToLower()) *chunkhound-optimized/chunkhound-optimized.exe" | Out-File -Append -FilePath "${{ matrix.binary_name }}.sha256" -Encoding ASCII
+            $archiveHashLine = $archiveHash.Hash.ToLower() + " *" + $archiveName
+            $binaryHashLine = $binaryHash.Hash.ToLower() + " *chunkhound-optimized/chunkhound-optimized.exe"
+            
+            $archiveHashLine | Out-File -FilePath $checksumFile -Encoding ASCII
+            $binaryHashLine | Out-File -Append -FilePath $checksumFile -Encoding ASCII
           } catch {
             "Could not generate checksums" | Out-File -FilePath "${{ matrix.binary_name }}.sha256" -Encoding ASCII
           }
