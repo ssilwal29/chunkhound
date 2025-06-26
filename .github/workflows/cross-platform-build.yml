@@ -17,151 +17,76 @@ on:
         required: false
         default: "true"
         type: boolean
-      run_validation:
-        description: "Run comprehensive binary validation"
-        required: false
-        default: "false"
-        type: boolean
 
 env:
   DOCKER_BUILDKIT: 1
   PYTHON_VERSION: "3.11"
-  UV_CACHE_DIR: ~/.cache/uv
-  PYINSTALLER_CACHE_DIR: ~/.cache/pyinstaller
 
 jobs:
-  # Matrix build for native compilation on each platform
-  build-binaries:
-    name: Build ${{ matrix.platform }} Binary
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-x64
-            os: ubuntu-22.04
-            binary_name: chunkhound-linux-x64
-            docker_target: ubuntu-builder
-            artifact_path: dist/chunkhound-optimized
-          - platform: windows-x64
-            os: windows-latest
-            binary_name: chunkhound-windows-x64
-            artifact_path: dist/chunkhound-optimized
-
+  build-ubuntu:
+    name: Build Ubuntu x64 Binary
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      # Advanced caching for dependencies and build artifacts
-      - name: Cache UV Dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/uv
-            ~/.local/share/uv
-          key: uv-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
-          restore-keys: |
-            uv-${{ runner.os }}-${{ runner.arch }}-
-            uv-${{ runner.os }}-
-
-      - name: Cache PyInstaller Build Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/pyinstaller
-            build/
-          key: pyinstaller-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('chunkhound-optimized.spec', 'chunkhound/**/*.py') }}
-          restore-keys: |
-            pyinstaller-${{ runner.os }}-${{ runner.arch }}-
-            pyinstaller-${{ runner.os }}-
-
-      - name: Cache Docker Layers
-        if: matrix.platform == 'ubuntu'
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: docker-buildx-${{ runner.os }}-${{ hashFiles('Dockerfile', 'pyproject.toml') }}
-          restore-keys: |
-            docker-buildx-${{ runner.os }}-
-
-      # Ubuntu: Docker-based build with advanced caching and multi-architecture
-      - name: Set up Docker Buildx
-        if: startsWith(matrix.platform, 'ubuntu')
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=moby/buildkit:master
-            network=host
-
-
       - name: Build Ubuntu Binary (Docker)
-        if: startsWith(matrix.platform, 'ubuntu')
         run: |
           echo "🐧 Building Ubuntu binary with Docker..."
-
-          # Build for x64 only (Ubuntu 20.04 doesn't support x86)
+          
+          # Build for x64 only
           PLATFORM="linux/amd64"
-          ARCH_SUFFIX="x64"
-
-          echo "Building for platform: $PLATFORM"
-
-          # Build using Docker for Ubuntu 16 with Python 3.10
+          
+          # Build using Docker
           docker buildx build \
             --platform $PLATFORM \
             --target ubuntu-builder \
-            --tag chunkhound:ubuntu-build-$ARCH_SUFFIX \
+            --tag chunkhound:ubuntu-build \
             --load \
             .
 
-          # Extract entire PyInstaller onedir bundle
-          docker create --name temp-ubuntu-$ARCH_SUFFIX chunkhound:ubuntu-build-$ARCH_SUFFIX
-          # Copy the entire dist content (binary + _internal)
-          docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/. ./dist/
-          docker rm temp-ubuntu-$ARCH_SUFFIX
-          
-          # Debug: Check what files were actually copied
-          echo "=== Files copied from Docker ==="
-          ls -la ./dist/
-          echo "=== Contents of chunkhound-optimized directory ==="
-          ls -la ./dist/chunkhound-optimized/
-          echo "================================"
-          
-          # The chunkhound-optimized directory is already correctly structured
+          # Extract PyInstaller bundle
+          docker create --name temp-ubuntu chunkhound:ubuntu-build
+          docker cp temp-ubuntu:/app/dist/. ./dist/
+          docker rm temp-ubuntu
           
           # Verify binary exists and is executable
           if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
             chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
             echo "✅ Binary extracted successfully"
-            file ./dist/chunkhound-optimized/chunkhound-optimized
-            ls -la ./dist/chunkhound-optimized/
+            ./dist/chunkhound-optimized/chunkhound-optimized --version
           else
-            echo "❌ Binary not found after restructuring"
-            echo "Contents of ./dist/:"
-            ls -la ./dist/
+            echo "❌ Binary not found after build"
             exit 1
           fi
 
           # Create tarball
-          cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/ && cd ..
+          cd dist && tar -czf chunkhound-linux-x64.tar.gz chunkhound-optimized/ && cd ..
 
-          # Verify binary
-          if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-            ./dist/chunkhound-optimized/chunkhound-optimized --version
-          else
-            echo "❌ Binary not found at expected location"
-            exit 1
-          fi
+      - name: Upload Ubuntu Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunkhound-linux-x64
+          path: dist/chunkhound-linux-x64.tar.gz
+          retention-days: 30
 
-      # Windows: Native build with PyInstaller
-      - name: Build Windows Binary (Native)
-        if: startsWith(matrix.platform, 'windows')
+  build-windows:
+    name: Build Windows x64 Binary  
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Build Windows Binary
         shell: powershell
         run: |
           Write-Host "🪟 Building Windows binary..."
@@ -170,621 +95,29 @@ jobs:
           Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1" | Invoke-Expression
           $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
 
-          # Install dependencies
+          # Install dependencies and PyInstaller
           uv sync --no-dev
-
-          # Install PyInstaller
           uv add --dev pyinstaller
 
           # Build binary
-          uv run pyinstaller chunkhound-optimized.spec --clean --noconfirm --workpath .\build --distpath .\dist
+          uv run pyinstaller chunkhound-optimized.spec --clean --noconfirm
 
           # Verify binary exists
           $binaryPath = ".\dist\chunkhound-optimized\chunkhound-optimized.exe"
           if (Test-Path $binaryPath) {
             Write-Host "✅ Binary built successfully"
-            Get-ItemProperty $binaryPath | Select-Object Name, Length
+            & $binaryPath --version
           } else {
             Write-Host "❌ Binary not found after build"
-            Get-ChildItem .\dist\ -Recurse
             exit 1
           }
 
           # Create zip archive
-          Compress-Archive -Path "dist\chunkhound-optimized" -DestinationPath "dist\${{ matrix.binary_name }}.zip" -Force
+          Compress-Archive -Path "dist\chunkhound-optimized" -DestinationPath "dist\chunkhound-windows-x64.zip" -Force
 
-          # Verify binary functionality
-          & $binaryPath --version
-
-
-
-
-      - name: Test Binary Performance
-        shell: ${{ startsWith(matrix.platform, 'windows') && 'powershell' || 'bash' }}
-        run: |
-          ${{ startsWith(matrix.platform, 'windows') && 'Write-Host "⚡ Testing binary performance..."' || 'echo "⚡ Testing binary performance..."' }}
-
-          # Create performance results directory
-          ${{ startsWith(matrix.platform, 'windows') && 'New-Item -ItemType Directory -Force -Path ".\performance-results"' || 'mkdir -p ./performance-results' }}
-
-          ${{ startsWith(matrix.platform, 'windows') && '
-          # Windows-specific performance testing
-          $binaryPath = ".\dist\chunkhound-optimized\chunkhound-optimized.exe"
-          if (-not (Test-Path $binaryPath)) {
-            Write-Host "❌ Binary not found for performance testing"
-            exit 1
-          }
-
-          # Startup time test
-          Write-Host "Testing startup time..."
-          $startupTimes = @()
-          for ($i = 1; $i -le 5; $i++) {
-            Write-Host "Run $i:"
-            $elapsed = Measure-Command { & $binaryPath --help | Out-Null }
-            $startupTimes += $elapsed.TotalSeconds
-            "$($elapsed.TotalSeconds)s" | Out-File -Append ".\performance-results\startup-times.txt"
-          }
-
-          # Binary size analysis
-          Write-Host "Binary size analysis:"
-          $binary = Get-ItemProperty $binaryPath
-          $binarySize = [math]::Round($binary.Length / 1MB, 2)
-          "Binary size: $($binarySize)MB" | Tee-Object -FilePath ".\performance-results\binary-size.txt"
-          
-          $archive = Get-ItemProperty ".\dist\${{ matrix.binary_name }}.zip"
-          $archiveSize = [math]::Round($archive.Length / 1MB, 2)
-          "Archive size: $($archiveSize)MB" | Tee-Object -Append -FilePath ".\performance-results\binary-size.txt"
-
-          # Basic functionality test
-          Write-Host "Testing basic functionality..."
-          & $binaryPath --version | Tee-Object -FilePath ".\performance-results\version-info.txt"
-          & $binaryPath config --help | Out-Null
-
-          # Performance summary
-          $avgStartup = ($startupTimes | Measure-Object -Average).Average
-          "Performance Summary for ${{ matrix.platform }}:" | Out-File ".\performance-results\summary.txt"
-          "================================" | Out-File -Append ".\performance-results\summary.txt"
-          "Binary Size: $($binarySize)MB" | Out-File -Append ".\performance-results\summary.txt"
-          "Archive Size: $($archiveSize)MB" | Out-File -Append ".\performance-results\summary.txt"
-          "Average Startup Time: $([math]::Round($avgStartup, 3))s" | Out-File -Append ".\performance-results\summary.txt"
-          ' || '
-          # Linux-specific performance testing
-          if [ ! -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
-            echo "❌ Binary not found for performance testing"
-            exit 1
-          fi
-          
-          # Ensure binary is executable
-          chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
-
-          # Startup time test with measurements
-          echo "Testing startup time..."
-          for i in {1..5}; do
-            echo "Run $i:"
-            { time ./dist/chunkhound-optimized/chunkhound-optimized --help > /dev/null; } 2>> ./performance-results/startup-times.txt
-          done
-
-          # Binary size analysis
-          echo "Binary size analysis:"
-          ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | tee ./performance-results/binary-size.txt
-          du -sh ./dist/chunkhound-optimized/ | tee -a ./performance-results/binary-size.txt
-
-          # Archive size
-          ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | tee -a ./performance-results/binary-size.txt
-
-          # Basic functionality test
-          echo "Testing basic functionality..."
-          ./dist/chunkhound-optimized/chunkhound-optimized --version | tee ./performance-results/version-info.txt
-          ./dist/chunkhound-optimized/chunkhound-optimized config --help > /dev/null
-
-          # Performance summary
-          echo "Performance Summary for ${{ matrix.platform }}:" > ./performance-results/summary.txt
-          echo "================================" >> ./performance-results/summary.txt
-          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')" >> ./performance-results/summary.txt
-          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./performance-results/summary.txt
-          echo "Average Startup Time: $(awk '/real/ {sum+=$2; count++} END {if(count>0) print sum/count "s"; else print "N/A"}' ./performance-results/startup-times.txt)" >> ./performance-results/summary.txt
-          ' }}
-
-
-      - name: Generate Build Info
-        shell: ${{ startsWith(matrix.platform, 'windows') && 'powershell' || 'bash' }}
-        run: |
-          ${{ startsWith(matrix.platform, 'windows') && 'Write-Host "📋 Generating build information..."' || 'echo "📋 Generating build information..."' }}
-
-          ${{ startsWith(matrix.platform, 'windows') && '
-          # Windows build info generation
-          $buildDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC"
-          $binaryPath = ".\dist\chunkhound-optimized\chunkhound-optimized.exe"
-          $archivePath = ".\dist\${{ matrix.binary_name }}.zip"
-          
-          $binary = Get-ItemProperty $binaryPath
-          $archive = Get-ItemProperty $archivePath
-          $binarySize = [math]::Round($binary.Length / 1MB, 2)
-          $archiveSize = [math]::Round($archive.Length / 1MB, 2)
-
-          "Build Date: $buildDate`nPlatform: ${{ matrix.platform }}`nOS: ${{ matrix.os }}`nPython Version: ${{ env.PYTHON_VERSION }}`nRunner: GitHub Actions`nCommit: ${{ github.sha }}`nRef: ${{ github.ref }}`nBinary Size: $($binarySize)MB`nArchive Size: $($archiveSize)MB" | Out-File ".\dist\BUILD_INFO_${{ matrix.platform }}.txt"
-
-          # Generate checksums for Windows
-          cd dist
-          $archiveHash = Get-FileHash "${{ matrix.binary_name }}.zip" -Algorithm SHA256
-          $binaryHash = Get-FileHash "chunkhound-optimized\chunkhound-optimized.exe" -Algorithm SHA256
-          "$($archiveHash.Hash.ToLower())  ${{ matrix.binary_name }}.zip" | Out-File "${{ matrix.binary_name }}.sha256"
-          "$($binaryHash.Hash.ToLower())  chunkhound-optimized/chunkhound-optimized.exe" | Out-File -Append "${{ matrix.binary_name }}.sha256"
-          ' || '
-          # Linux build info generation  
-          echo "Build Date: $(date -u +\"%Y-%m-%d %H:%M:%S UTC\")" > ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Platform: ${{ matrix.platform }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "OS: ${{ matrix.os }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Python Version: ${{ env.PYTHON_VERSION }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Runner: GitHub Actions" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Commit: ${{ github.sha }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Ref: ${{ github.ref }}" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Binary Size: $(ls -lh ./dist/chunkhound-optimized/chunkhound-optimized | awk '{print $5}')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-          echo "Archive Size: $(ls -lh ./dist/${{ matrix.binary_name }}.tar.gz | awk '{print $5}')" >> ./dist/BUILD_INFO_${{ matrix.platform }}.txt
-
-          # Generate checksums (cross-platform compatible)
-          cd dist
-          if command -v sha256sum >/dev/null 2>&1; then
-            # Linux
-            sha256sum ${{ matrix.binary_name }}.tar.gz > ${{ matrix.binary_name }}.sha256
-            sha256sum chunkhound-optimized/chunkhound-optimized >> ${{ matrix.binary_name }}.sha256
-          elif command -v shasum >/dev/null 2>&1; then
-            # macOS
-            shasum -a 256 ${{ matrix.binary_name }}.tar.gz > ${{ matrix.binary_name }}.sha256
-            shasum -a 256 chunkhound-optimized/chunkhound-optimized >> ${{ matrix.binary_name }}.sha256
-          else
-            echo "No SHA256 utility found" >> ${{ matrix.binary_name }}.sha256
-          fi
-          ' }}
-
-
-      - name: Upload Binary Artifacts
+      - name: Upload Windows Binary
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.binary_name }}
-          path: |
-            dist/${{ matrix.binary_name }}.${{ startsWith(matrix.platform, 'windows') && 'zip' || 'tar.gz' }}
-            dist/${{ matrix.binary_name }}.sha256
-            dist/BUILD_INFO_${{ matrix.platform }}.txt
-            performance-results/
+          name: chunkhound-windows-x64
+          path: dist/chunkhound-windows-x64.zip
           retention-days: 30
-
-      - name: Upload Binary Directory
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.binary_name }}-directory
-          path: dist/chunkhound-optimized/
-          retention-days: 7
-
-  # Comprehensive validation job with caching
-  validate-binaries:
-    name: Validate Cross-Platform Binaries
-    needs: build-binaries
-    runs-on: ubuntu-latest
-    if: false  # Temporarily disabled for Windows-only testing
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Cache Validation Tools
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/validation-tools
-            /tmp/validation-cache
-          key: validation-tools-${{ runner.os }}-${{ hashFiles('scripts/validate-binaries.sh') }}
-          restore-keys: |
-            validation-tools-${{ runner.os }}-
-
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
-
-      - name: Prepare Validation Environment
-        run: |
-          echo "🔧 Setting up validation environment..."
-
-          # Create artifacts directory structure
-          mkdir -p ./dist/docker-artifacts/{linux,windows,checksums}
-
-          # Extract Ubuntu binary
-          if [ -f "./artifacts/chunkhound-linux-x64/chunkhound-linux-x64.tar.gz" ]; then
-            cd ./dist/docker-artifacts/linux
-            tar -xzf ../../../artifacts/chunkhound-linux-x64/chunkhound-linux-x64.tar.gz
-            cd ../../..
-            echo "✅ Ubuntu binary extracted"
-          fi
-
-          # Extract Windows binaries (for analysis only on Linux)
-          if [ -f "./artifacts/chunkhound-windows-x64/chunkhound-windows-x64.zip" ]; then
-            cd ./dist/docker-artifacts
-            mkdir -p windows
-            cd windows
-            unzip -q ../../../artifacts/chunkhound-windows-x64/chunkhound-windows-x64.zip
-            mv chunkhound-optimized chunkhound-windows
-            cd ../../..
-            echo "✅ Windows x64 binary extracted"
-          fi
-
-          # Collect checksums
-          find ./artifacts -name "*.sha256" -exec cp {} ./dist/docker-artifacts/checksums/ \;
-
-          # Show structure
-          echo "📁 Validation structure:"
-          find ./dist/docker-artifacts -type f | head -20
-
-      - name: Run Binary Validation
-        run: |
-          echo "🧪 Running comprehensive binary validation with caching..."
-
-          # Create validation cache directory
-          mkdir -p /tmp/validation-cache
-
-          # Make validation script executable
-          chmod +x ./scripts/validate-binaries.sh
-
-          # Run validation with detailed output and caching
-          VALIDATION_CACHE_DIR=/tmp/validation-cache \
-          ./scripts/validate-binaries.sh --max-startup 2.0 --max-size 150 --cache-results
-
-          # Generate performance comparison report
-          echo "📊 Generating performance comparison report..."
-          cat > ./dist/docker-artifacts/test-results/performance-comparison.md << 'EOF'
-          # Performance Comparison Report
-
-          ## Build Performance Metrics
-
-          EOF
-
-          # Add performance data from each platform
-          for platform in ubuntu windows; do
-            if [ -d "./artifacts/chunkhound-${platform}-x64" ]; then
-              echo "### $platform Performance" >> ./dist/docker-artifacts/test-results/performance-comparison.md
-              find ./artifacts -name "summary.txt" -path "*${platform}*" -exec cat {} \; >> ./dist/docker-artifacts/test-results/performance-comparison.md
-              echo "" >> ./dist/docker-artifacts/test-results/performance-comparison.md
-            fi
-          done
-
-      - name: Upload Validation Results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: validation-results
-          path: |
-            dist/docker-artifacts/test-results/
-          retention-days: 14
-
-  # Performance analysis and optimization metrics
-  analyze-performance:
-    name: Performance Analysis
-    needs: build-binaries
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download Performance Results
-        uses: actions/download-artifact@v4
-        with:
-          path: ./performance-artifacts
-
-      - name: Generate Performance Report
-        run: |
-          echo "📊 Generating comprehensive performance analysis..."
-
-          mkdir -p ./analysis/{reports,charts,comparisons}
-
-          # Create performance summary
-          cat > ./analysis/reports/performance-summary.md << 'EOF'
-          # ChunkHound CI/CD Performance Analysis
-
-          ## Build Performance Metrics
-
-          ### Platform Comparison
-
-          | Platform | Architecture | Build Time | Binary Size | Startup Time | Cache Hit Rate |
-          |----------|-------------|------------|-------------|--------------|---------------|
-          EOF
-
-          # Process performance data from each platform
-          for artifact_dir in ./performance-artifacts/*; do
-            if [ -d "$artifact_dir" ] && [ -f "$artifact_dir/summary.txt" ]; then
-              platform=$(basename "$artifact_dir" | sed 's/chunkhound-//' | sed 's/-amd64//' | sed 's/-arm64//')
-              arch=$(echo "$(basename "$artifact_dir")" | grep -o 'amd64\|arm64' || echo 'amd64')
-
-              # Extract metrics from summary
-              binary_size=$(grep "Binary Size:" "$artifact_dir/summary.txt" | awk '{print $3}' || echo "N/A")
-              archive_size=$(grep "Archive Size:" "$artifact_dir/summary.txt" | awk '{print $3}' || echo "N/A")
-              startup_time=$(grep "Average Startup Time:" "$artifact_dir/summary.txt" | awk '{print $4}' || echo "N/A")
-
-              echo "| $platform | $arch | N/A | $binary_size | $startup_time | N/A |" >> ./analysis/reports/performance-summary.md
-            fi
-          done
-
-          cat >> ./analysis/reports/performance-summary.md << 'EOF'
-
-          ## Optimization Recommendations
-
-          ### Caching Effectiveness
-          - UV dependency caching: Significantly reduces dependency installation time
-          - PyInstaller build caching: Speeds up subsequent builds by reusing analysis
-          - Docker layer caching: Optimizes Ubuntu build pipeline
-
-          ### Performance Targets Met
-          - ✅ Startup time: All platforms under 2 seconds
-          - ✅ Binary size: All binaries under 150MB
-          - ✅ Build reliability: Matrix builds with fail-safe strategies
-
-          ### Future Optimizations
-          - Implement build time tracking
-          - Add cache hit rate monitoring
-          - Optimize dependency resolution
-          - Consider binary stripping for size reduction
-
-          EOF
-
-          echo "Performance analysis complete"
-
-      - name: Upload Performance Analysis
-        uses: actions/upload-artifact@v4
-        with:
-          name: performance-analysis
-          path: ./analysis/
-          retention-days: 30
-
-  # Collect and prepare release assets with enhanced multi-architecture support
-  prepare-release:
-    name: Prepare Release Assets
-    needs: [build-binaries, analyze-performance]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download All Build Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./release-artifacts
-
-      - name: Organize Release Assets
-        run: |
-          echo "📦 Organizing multi-architecture release assets..."
-
-          mkdir -p ./release/{binaries,checksums,docs,performance}
-
-          # Copy binaries and checksums
-          find ./release-artifacts -name "*.tar.gz" -exec cp {} ./release/binaries/ \;
-          find ./release-artifacts -name "*.zip" -exec cp {} ./release/binaries/ \;
-          find ./release-artifacts -name "*.sha256" -exec cp {} ./release/checksums/ \;
-          find ./release-artifacts -name "BUILD_INFO_*.txt" -exec cp {} ./release/docs/ \;
-
-          # Copy performance analysis
-          find ./release-artifacts -name "performance-*.md" -exec cp {} ./release/performance/ \; 2>/dev/null || true
-
-          # Create combined checksum file
-          cat ./release/checksums/*.sha256 > ./release/SHA256SUMS
-
-          # Generate enhanced release notes with multi-architecture support
-          cat > ./release/RELEASE_NOTES.md << EOF
-          # ChunkHound ${{ github.ref_name }} - Cross-Platform Release
-
-          ## Binary Downloads
-
-          | Platform | Architecture | Binary | Size | Performance |
-          |----------|-------------|---------|------|-------------|
-          EOF
-
-          # Add binary information to release notes with architecture detection
-          for archive in ./release/binaries/*; do
-            if [ -f "$archive" ]; then
-              filename=$(basename "$archive")
-              size=$(ls -lh "$archive" | awk '{print $5}')
-
-              # Extract platform and architecture
-              if [[ "$filename" == *"linux-x64"* ]]; then
-                platform="Linux"; arch="x86_64"
-              elif [[ "$filename" == *"windows-x64"* ]]; then
-                platform="Windows"; arch="x86_64"
-              else
-                platform="Unknown"; arch="Unknown"
-              fi
-
-              perf_note="< 1s startup"
-              echo "| $platform | $arch | [\`$filename\`]($filename) | $size | $perf_note |" >> ./release/RELEASE_NOTES.md
-            fi
-          done
-
-          cat >> ./release/RELEASE_NOTES.md << EOF
-
-          ## Installation
-
-          ### Ubuntu/Linux (x86_64)
-          \`\`\`bash
-          # Download and extract
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/chunkhound-linux-x64.tar.gz
-          tar -xzf chunkhound-linux-x64.tar.gz
-          sudo mv chunkhound-optimized/chunkhound-optimized /usr/local/bin/chunkhound
-          \`\`\`
-
-          ### Windows (x86_64)
-          \`\`\`powershell
-          # Download and extract
-          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/chunkhound-windows-x64.zip" -OutFile "chunkhound-windows-x64.zip"
-          Expand-Archive -Path "chunkhound-windows-x64.zip" -DestinationPath "."
-          # Add to PATH or move chunkhound-optimized.exe to desired location
-          \`\`\`
-
-          ## Platform Detection
-
-          To automatically detect and download the correct binary:
-
-          ### Linux/macOS/WSL:
-          \`\`\`bash
-          # Auto-detect script
-          ARCH=\$(uname -m)
-          OS=\$(uname -s | tr '[:upper:]' '[:lower:]')
-
-          case "\$OS" in
-            linux)
-              case "\$ARCH" in
-                x86_64) BINARY="chunkhound-linux-x64.tar.gz" ;;
-                *) echo "Unsupported architecture: \$ARCH"; exit 1 ;;
-              esac
-              ;;
-            *) echo "Unsupported OS: \$OS (use Windows PowerShell for Windows)"; exit 1 ;;
-          esac
-
-          curl -L -O "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/\$BINARY"
-          tar -xzf "\$BINARY"
-          sudo mv chunkhound-optimized/chunkhound-optimized /usr/local/bin/chunkhound
-          \`\`\`
-
-          ### Windows PowerShell:
-          \`\`\`powershell
-          # Auto-detect and download Windows binary
-          \$arch = \$env:PROCESSOR_ARCHITECTURE
-          if (\$arch -eq "AMD64") {
-            \$binary = "chunkhound-windows-x64.zip"
-          } else {
-            Write-Host "Unsupported architecture: \$arch"
-            exit 1
-          }
-
-          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/\$binary" -OutFile \$binary
-          Expand-Archive -Path \$binary -DestinationPath "."
-          # Move chunkhound-optimized.exe to desired location or add to PATH
-          \`\`\`
-
-          ## Verification
-
-          Verify the integrity of downloaded files:
-          \`\`\`bash
-          # Download checksums
-          curl -L -O https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SHA256SUMS
-
-          # Verify your downloaded binary
-          sha256sum -c SHA256SUMS
-          \`\`\`
-
-          ## What's New
-
-          This release includes optimized cross-platform binaries built with:
-          - **Cross-Platform Support**: x86_64 for both Linux and Windows
-          - **Advanced Caching**: Intelligent dependency and build caching for 50% faster CI/CD
-          - **Performance Optimizations**: < 1 second startup time across all platforms
-          - **Enhanced Validation**: Comprehensive cross-platform testing
-          - **Native Compilation**: Platform-specific optimizations for maximum performance
-          - **Windows Support**: Native Windows binaries with PowerShell integration
-
-          ### Performance Improvements
-          - UV dependency caching reduces build times
-          - PyInstaller build caching for faster subsequent builds
-          - Docker layer caching for Linux builds
-          - Parallel job execution with optimal resource utilization
-
-          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for detailed changes.
-          EOF
-
-          echo "📋 Enhanced release structure:"
-          find ./release -type f | sort
-
-      - name: Upload Release Assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-assets-${{ github.ref_name }}
-          path: ./release/
-          retention-days: 90
-
-  # Auto-create GitHub Release
-  create-release:
-    name: Create GitHub Release
-    needs: prepare-release
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download Release Assets
-        uses: actions/download-artifact@v4
-        with:
-          name: release-assets-${{ github.ref_name }}
-          path: ./release
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          name: ChunkHound ${{ github.ref_name }}
-          body_path: ./release/RELEASE_NOTES.md
-          files: |
-            ./release/binaries/*.tar.gz
-            ./release/SHA256SUMS
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
-          generate_release_notes: true
-
-  # Enhanced notification job with performance metrics
-  notify-completion:
-    name: Build Completion Notification
-    needs: [build-binaries, analyze-performance]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Enhanced Build Summary
-        run: |
-          echo "🎯 Cross-Platform Build Pipeline Summary"
-          echo "========================================"
-          echo "Trigger: ${{ github.event_name }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Workflow: Enhanced with advanced caching and cross-platform support"
-          echo ""
-          echo "Job Status:"
-          echo "- Build Binaries: ${{ needs.build-binaries.result }}"
-          echo "- Performance Analysis: ${{ needs.analyze-performance.result }}"
-          echo ""
-
-          # Calculate success rate
-          success_count=0
-          total_count=2
-
-          [ "${{ needs.build-binaries.result }}" == "success" ] && success_count=$((success_count + 1))
-          [ "${{ needs.analyze-performance.result }}" == "success" ] && success_count=$((success_count + 1))
-
-          success_rate=$((success_count * 100 / total_count))
-
-          echo "Success Rate: $success_rate% ($success_count/$total_count jobs)"
-          echo ""
-
-          if [ $success_count -eq $total_count ]; then
-            echo "🎉 All jobs completed successfully!"
-            echo "✅ Cross-platform binaries are ready for deployment"
-            echo "🚀 Enhanced CI/CD pipeline operating at optimal performance"
-            echo ""
-            echo "Achievements:"
-            echo "- ✅ Cross-platform support (Linux + Windows)"
-            echo "- ✅ Advanced caching implemented"
-            echo "- ✅ Performance optimization active"
-            echo "- ✅ Comprehensive validation passed"
-          elif [ $success_count -gt 0 ]; then
-            echo "⚠️ Partial success - $success_count out of $total_count jobs completed"
-            echo "📋 Review failed jobs and logs for issues"
-          else
-            echo "❌ All jobs failed - critical pipeline issues detected"
-            echo "🔧 Immediate attention required"
-          fi
-
-          echo ""
-          echo "Pipeline Enhancements Active:"
-          echo "- 🔄 UV dependency caching"
-          echo "- 🐳 Docker layer caching"
-          echo "- ⚡ PyInstaller build caching"
-          echo "- 🏗️ Cross-platform matrix builds"
-          echo "- 📊 Performance monitoring and analysis"
