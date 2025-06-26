@@ -237,6 +237,8 @@ test_output.log
 
 # CLI distribution artifacts
 chunkhound-cli-dist/
+chunkhound-linux-x64/
+chunkhound-windows-x64/
 
 # CLI wrapper scripts (generated)
 chunkhound-cli
