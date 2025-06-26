@@ -121,8 +121,20 @@ jobs:
           docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/chunkhound-optimized ./dist/
           docker rm temp-ubuntu-$ARCH_SUFFIX
           
+          # Debug: Check what was created
+          echo "Contents of ./dist/:"
+          ls -la ./dist/
+          echo "Contents of ./dist/chunkhound-optimized/:"
+          ls -la ./dist/chunkhound-optimized/ || echo "Directory does not exist"
+          
           # Fix permissions
-          chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+          if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
+            chmod +x ./dist/chunkhound-optimized/chunkhound-optimized
+          else
+            echo "Binary not found at expected location"
+            find ./dist -name "chunkhound*" -type f
+            exit 1
+          fi
 
           # Create tarball
           cd dist && tar -czf ${{ matrix.binary_name }}.tar.gz chunkhound-optimized/
