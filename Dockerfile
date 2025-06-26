@@ -34,8 +34,9 @@ RUN apt-get update && apt-get install -y \
     file \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast Python package management
-RUN python3 -m pip install uv
+# Install uv using the official installer
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
 
 # Set working directory
 WORKDIR /app
@@ -46,7 +47,7 @@ COPY requirements.txt ./
 COPY README.md ./
 
 # Install Python dependencies
-RUN python3 -m uv sync --no-dev
+RUN uv sync --no-dev
 
 # Copy source code
 COPY . .
@@ -61,14 +62,14 @@ ARG TARGETPLATFORM
 ENV PLATFORM_ARCH=${TARGETPLATFORM}
 
 # Install PyInstaller for binary creation
-RUN python3 -m uv add --dev pyinstaller
+RUN uv add --dev pyinstaller
 
 # Create PyInstaller cache directory
 RUN mkdir -p /tmp/pyinstaller-cache
 
 # Build the onedir executable for Linux
 RUN echo "Building for platform: ${PLATFORM_ARCH}" && \
-    python3 -m uv run pyinstaller chunkhound-optimized.spec \
+    uv run pyinstaller chunkhound-optimized.spec \
     --clean \
     --noconfirm \
     --workpath /tmp/pyinstaller-work \
