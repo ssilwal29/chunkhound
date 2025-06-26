@@ -136,9 +136,14 @@ class SignalCoordinator:
             if self.database_manager and hasattr(self.database_manager, 'db_path'):
                 self._original_db_path = Path(self.database_manager.db_path)
 
-            # Skip checkpoint here - let the database close() handle it
-            # Checkpointing during signal handling can cause race conditions
-            # The database provider's close() method includes proper shutdown
+            # Perform checkpoint before disconnect to minimize WAL size
+            # This is safer now that it's done within the task context
+            try:
+                if hasattr(self.database_manager, '_maybe_checkpoint'):
+                    self.database_manager._maybe_checkpoint(force=True)
+                    logger.info("Checkpoint completed before shutdown")
+            except Exception as checkpoint_error:
+                logger.warning(f"Checkpoint before shutdown failed: {checkpoint_error}")
 
             # Disconnect database connection (preferred method)
             if hasattr(self.database_manager, 'disconnect'):

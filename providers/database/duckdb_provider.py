@@ -49,6 +49,11 @@ class DuckDBProvider:
 
         # File discovery cache for performance optimization
         self._file_discovery_cache = FileDiscoveryCache()
+        
+        # Enhanced checkpoint tracking
+        self._operations_since_checkpoint = 0
+        self._checkpoint_threshold = 100  # Checkpoint every N operations
+        self._last_checkpoint_time = time.time()
 
     def _extract_file_id(self, file_record: dict[str, Any] | File) -> int | None:
         """Safely extract file ID from either dict or File model."""
@@ -141,31 +146,106 @@ class DuckDBProvider:
             "Failure while replaying WAL file",
             "Catalog \"chunkhound\" does not exist",
             "BinderException",
-            "Binder Error"
+            "Binder Error",
+            "Cannot bind index",
+            "unknown index type",
+            "HNSW",
+            "You need to load the extension"
         ]
 
         return any(indicator in error_msg for indicator in corruption_indicators)
 
     def _handle_wal_corruption(self) -> None:
-        """Handle WAL corruption by cleaning up corrupted WAL files."""
+        """Handle WAL corruption using advanced recovery with VSS extension preloading."""
         db_path = Path(self.db_path)
         wal_file = db_path.with_suffix(db_path.suffix + '.wal')
 
-        if wal_file.exists():
-            try:
-                # Get file size for logging
-                file_size = wal_file.stat().st_size
-                logger.warning(f"Removing corrupted WAL file: {wal_file} ({file_size:,} bytes)")
+        if not wal_file.exists():
+            logger.warning(f"WAL corruption detected but no WAL file found at: {wal_file}")
+            return
 
+        # Get WAL file size for logging
+        file_size = wal_file.stat().st_size
+        logger.warning(f"WAL corruption detected. File size: {file_size:,} bytes")
+
+        # First attempt: Try recovery with VSS extension preloaded
+        logger.info("Attempting WAL recovery with VSS extension preloaded...")
+        
+        try:
+            # Create a temporary recovery connection
+            recovery_conn = duckdb.connect(":memory:")
+            
+            # Load VSS extension first
+            recovery_conn.execute("INSTALL vss")
+            recovery_conn.execute("LOAD vss")
+            
+            # Enable experimental persistence for HNSW indexes
+            recovery_conn.execute("SET hnsw_enable_experimental_persistence = true")
+            
+            # Now attach the database file - this will trigger WAL replay with extension loaded
+            recovery_conn.execute(f"ATTACH '{db_path}' AS recovery_db")
+            
+            # Verify tables are accessible
+            recovery_conn.execute("SELECT COUNT(*) FROM recovery_db.files").fetchone()
+            
+            # Force a checkpoint to ensure WAL is integrated
+            recovery_conn.execute("CHECKPOINT recovery_db")
+            
+            # Detach and close
+            recovery_conn.execute("DETACH recovery_db")
+            recovery_conn.close()
+            
+            logger.info("WAL recovery successful with VSS extension preloaded")
+            return
+            
+        except Exception as recovery_error:
+            logger.warning(f"Recovery with VSS preloading failed: {recovery_error}")
+            
+            # Second attempt: Conservative recovery - remove WAL but create backup first
+            try:
+                # Create backup of WAL file before removal
+                backup_path = wal_file.with_suffix('.wal.corrupt')
+                import shutil
+                shutil.copy2(wal_file, backup_path)
+                logger.info(f"Created WAL backup at: {backup_path}")
+                
                 # Remove corrupted WAL file
                 os.remove(wal_file)
-                logger.info(f"Corrupted WAL file removed successfully: {wal_file}")
-
+                logger.warning(f"Removed corrupted WAL file: {wal_file} (backup saved)")
+                
             except Exception as e:
-                logger.error(f"Failed to remove corrupted WAL file {wal_file}: {e}")
+                logger.error(f"Failed to handle corrupted WAL file {wal_file}: {e}")
                 raise
-        else:
-            logger.warning(f"WAL corruption detected but no WAL file found at: {wal_file}")
+
+    def _maybe_checkpoint(self, force: bool = False) -> None:
+        """Perform checkpoint if needed based on operations count or time elapsed.
+        
+        Args:
+            force: Force checkpoint regardless of thresholds
+        """
+        if self.connection is None:
+            return
+            
+        current_time = time.time()
+        time_since_checkpoint = current_time - self._last_checkpoint_time
+        
+        # Checkpoint if forced, operations threshold reached, or 5 minutes elapsed
+        should_checkpoint = (
+            force or 
+            self._operations_since_checkpoint >= self._checkpoint_threshold or
+            time_since_checkpoint >= 300  # 5 minutes
+        )
+        
+        if should_checkpoint:
+            try:
+                self.connection.execute("CHECKPOINT")
+                self._operations_since_checkpoint = 0
+                self._last_checkpoint_time = current_time
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.debug(f"Checkpoint completed (operations: {self._operations_since_checkpoint}, time: {time_since_checkpoint:.1f}s)")
+            except Exception as e:
+                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
+                    logger.warning(f"Checkpoint failed: {e}")
 
     def disconnect(self, skip_checkpoint: bool = False) -> None:
         """Close database connection with optional checkpointing.
@@ -678,14 +758,8 @@ class DuckDBProvider:
             # Commit transaction
             self.connection.execute("COMMIT")
 
-            # Checkpoint after large bulk operations to ensure durability
-            try:
-                self.connection.execute("CHECKPOINT")
-                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                    logger.debug("Bulk operation checkpoint completed")
-            except Exception as e:
-                if not os.environ.get("CHUNKHOUND_MCP_MODE"):
-                    logger.warning(f"Bulk operation checkpoint failed: {e}")
+            # Force checkpoint after bulk operations to ensure durability
+            self._maybe_checkpoint(force=True)
 
             logger.info("Bulk operation completed successfully with index management")
             return result
@@ -748,7 +822,13 @@ class DuckDBProvider:
                 file.language.value if file.language else None
             ]).fetchone()
 
-            return result[0] if result else 0
+            file_id = result[0] if result else 0
+            
+            # Track operation for checkpoint management
+            self._operations_since_checkpoint += 1
+            self._maybe_checkpoint()
+            
+            return file_id
 
         except Exception as e:
             logger.error(f"Failed to insert file {file.path}: {e}")
@@ -919,7 +999,7 @@ class DuckDBProvider:
             # 3. Delete file
             self.connection.execute("DELETE FROM files WHERE id = ?", [file_id])
 
-            logger.info(f"File {file_path} and all associated data deleted")
+            logger.debug(f"File {file_path} and all associated data deleted")
             return True
 
         except Exception as e:
@@ -1004,7 +1084,13 @@ class DuckDBProvider:
             """).fetchall()
 
             # Return IDs in correct order (oldest first)
-            return [result[0] for result in reversed(results)]
+            chunk_ids = [result[0] for result in reversed(results)]
+            
+            # Track batch operation for checkpoint management
+            self._operations_since_checkpoint += len(chunks)
+            self._maybe_checkpoint()
+            
+            return chunk_ids
 
         except Exception as e:
             logger.error(f"Failed to insert chunks batch: {e}")
@@ -1439,6 +1525,15 @@ class DuckDBProvider:
                 logger.debug(f"🏆 HNSW-optimized batch insert: {total_inserted} embeddings in {insert_time:.3f}s ({total_inserted/insert_time:.1f} embeddings/sec) - Expected 10-20x speedup achieved!")
             else:
                 logger.debug(f"🎯 Standard batch insert: {total_inserted} embeddings in {insert_time:.3f}s ({total_inserted/insert_time:.1f} embeddings/sec)")
+
+            # Track embedding operations for checkpoint management
+            self._operations_since_checkpoint += total_inserted
+            
+            # Force checkpoint for large embedding batches to minimize WAL growth
+            if total_inserted >= 50:
+                self._maybe_checkpoint(force=True)
+            else:
+                self._maybe_checkpoint()
 
             return total_inserted
 

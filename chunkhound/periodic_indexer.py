@@ -273,16 +273,28 @@ class PeriodicIndexManager:
 
         try:
             # Discover all files in base directory
+            # Use default exclude patterns from IndexingCoordinator
+            exclude_patterns = self._indexing_coordinator.DEFAULT_EXCLUDE_PATTERNS
             files = self._indexing_coordinator._discover_files(
                 self._base_directory, 
                 patterns=None,  # Use default patterns
-                exclude_patterns=None  # Use default exclude patterns
+                exclude_patterns=exclude_patterns
             )
 
             if not files:
                 if "CHUNKHOUND_DEBUG" in os.environ:
                     print("No files found during background scan", file=sys.stderr)
                 return
+
+            # Clean up orphaned files (same as chunkhound index)
+            if scan_type == "startup":
+                cleaned_files = self._indexing_coordinator._cleanup_orphaned_files(
+                    self._base_directory, 
+                    files, 
+                    exclude_patterns
+                )
+                if cleaned_files > 0 and "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Cleaned up {cleaned_files} orphaned files during startup scan", file=sys.stderr)
 
             # Reset scan position for startup scans, continue from position for periodic
             if scan_type == "startup":
@@ -329,6 +341,19 @@ class PeriodicIndexManager:
                     f"duration: {scan_duration:.2f}s",
                     file=sys.stderr
                 )
+            
+            # Force checkpoint after background scan to minimize WAL size
+            try:
+                # Get database provider from registry
+                from .registry import get_registry
+                database_provider = get_registry().get_provider("database")
+                if database_provider and hasattr(database_provider, '_maybe_checkpoint'):
+                    database_provider._maybe_checkpoint(force=True)
+                    if "CHUNKHOUND_DEBUG" in os.environ:
+                        print(f"Checkpoint completed after {scan_type} background scan", file=sys.stderr)
+            except Exception as checkpoint_error:
+                if "CHUNKHOUND_DEBUG" in os.environ:
+                    print(f"Checkpoint after background scan failed: {checkpoint_error}", file=sys.stderr)
 
         except asyncio.CancelledError:
             # Handle graceful cancellation - don't log as error

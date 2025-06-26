@@ -20,6 +20,16 @@ from .base_service import BaseService
 class IndexingCoordinator(BaseService):
     """Coordinates file indexing workflows with parsing, chunking, and embedding generation."""
 
+    # Default exclude patterns for file discovery
+    DEFAULT_EXCLUDE_PATTERNS = [
+        "*/__pycache__/*", 
+        "*/node_modules/*", 
+        "*/.git/*", 
+        "*/venv/*", 
+        "*/.venv/*", 
+        "*/.mypy_cache/*"
+    ]
+
     def __init__(
         self,
         database_provider: DatabaseProvider,
@@ -423,7 +433,7 @@ class IndexingCoordinator(BaseService):
                 return {"status": "no_files", "files_processed": 0, "total_chunks": 0}
 
             # Phase 2: Reconciliation - Ensure database consistency by removing orphaned files
-            cleaned_files = self._cleanup_orphaned_files(directory, files)
+            cleaned_files = self._cleanup_orphaned_files(directory, files, exclude_patterns)
 
             logger.info(f"Directory consistency: {len(files)} files discovered, {cleaned_files} orphaned files cleaned")
 
@@ -691,7 +701,7 @@ class IndexingCoordinator(BaseService):
 
         # Default exclude patterns
         if not exclude_patterns:
-            exclude_patterns = ["*/__pycache__/*", "*/node_modules/*", "*/.git/*", "*/venv/*", "*/.venv/*"]
+            exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS
 
         for pattern in patterns:
             for file_path in directory.rglob(pattern):
@@ -712,12 +722,13 @@ class IndexingCoordinator(BaseService):
 
         return sorted(files)
 
-    def _cleanup_orphaned_files(self, directory: Path, current_files: list[Path]) -> int:
+    def _cleanup_orphaned_files(self, directory: Path, current_files: list[Path], exclude_patterns: list[str] | None = None) -> int:
         """Remove database entries for files that no longer exist in the directory.
         
         Args:
             directory: Directory being processed
             current_files: List of files currently in the directory
+            exclude_patterns: Optional list of exclude patterns to check against
             
         Returns:
             Number of orphaned files cleaned up
@@ -727,14 +738,55 @@ class IndexingCoordinator(BaseService):
             current_file_paths = {str(file_path.absolute()) for file_path in current_files}
             
             # Get all files in database that are under this directory
-            # Note: This requires implementing a method to get files by directory prefix
-            # For now, we'll skip this optimization and implement it later if needed
+            directory_str = str(directory.absolute())
+            query = """
+                SELECT id, path 
+                FROM files 
+                WHERE path LIKE ? || '%'
+            """
+            db_files = self._db.execute_query(query, [directory_str])
             
-            # TODO: Add implementation to get files by directory prefix and clean orphaned ones
-            # This would require adding a method to the database provider
+            # Find orphaned files (in DB but not on disk or excluded by patterns)
+            orphaned_files = []
+            patterns_to_check = exclude_patterns if exclude_patterns else self.DEFAULT_EXCLUDE_PATTERNS
             
-            logger.debug(f"Orphaned file cleanup: {len(current_files)} current files in {directory}")
-            return 0  # Placeholder - no cleanup performed yet
+            for db_file in db_files:
+                file_path = db_file['path']
+                
+                # Check if file should be excluded based on current patterns
+                should_exclude = False
+                
+                # Convert to Path for relative path calculation
+                file_path_obj = Path(file_path)
+                try:
+                    rel_path = file_path_obj.relative_to(directory)
+                except ValueError:
+                    # File is not under the directory, use absolute path
+                    rel_path = file_path_obj
+                
+                for exclude_pattern in patterns_to_check:
+                    # Check both relative and absolute paths
+                    if (fnmatch(str(rel_path), exclude_pattern) or 
+                        fnmatch(file_path, exclude_pattern)):
+                        should_exclude = True
+                        break
+                
+                # Mark for removal if not in current files or should be excluded
+                if file_path not in current_file_paths or should_exclude:
+                    orphaned_files.append(file_path)
+            
+            # Remove orphaned files with progress bar
+            orphaned_count = 0
+            if orphaned_files:
+                with tqdm(total=len(orphaned_files), desc="Cleaning orphaned files", unit="file") as pbar:
+                    for file_path in orphaned_files:
+                        if self._db.delete_file_completely(file_path):
+                            orphaned_count += 1
+                        pbar.update(1)
+                
+                logger.info(f"Cleaned up {orphaned_count} orphaned files from database")
+            
+            return orphaned_count
             
         except Exception as e:
             logger.warning(f"Failed to cleanup orphaned files: {e}")
