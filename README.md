@@ -410,6 +410,17 @@ export CHUNKHOUND_EMBEDDING_MODEL="text-embedding-3-small"
 export CHUNKHOUND_BASE_URL="http://localhost:11434"
 ```
 
+## Security
+
+ChunkHound prioritizes data security through a local-first architecture:
+
+- **Local database**: All code chunks stored in local SQLite/DuckDB - no data sent to external servers
+- **Local embeddings**: Supports self-hosted embedding servers (Ollama, LocalAI, TEI) for complete data isolation
+- **MCP over stdio**: Uses standard input/output for AI assistant communication - no network exposure
+- **No authentication complexity**: Zero auth required since everything runs locally on your machine
+
+Your code never leaves your environment unless you explicitly configure external embedding providers.
+
 ## Requirements
 
 - **Python**: 3.10+
