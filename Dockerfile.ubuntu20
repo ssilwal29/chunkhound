@@ -1,7 +1,15 @@
-# ChunkHound Ubuntu 20.04 Build for GLIBC Compatibility
-# This Dockerfile ensures binaries are compatible with Ubuntu 20.04.6 LTS and newer
+# ChunkHound Ubuntu 16.04 Build for GLIBC Compatibility
+# 
+# IMPORTANT: Ubuntu 16.04 is the MINIMUM SYSTEM REQUIREMENT for ChunkHound
+# This ensures maximum compatibility across Linux distributions and prevents
+# GLIBC version regressions that would break older systems.
+# 
+# DO NOT upgrade this base image without explicit approval and testing
+# across all supported target environments.
+# 
+# This Dockerfile ensures binaries are compatible with Ubuntu 16.04 LTS and newer
 
-FROM ubuntu:20.04 AS base-builder
+FROM ubuntu:16.04 AS base-builder
 
 # Prevent timezone prompts during apt install
 ENV DEBIAN_FRONTEND=noninteractive
@@ -69,7 +77,8 @@ RUN ls -la /app/dist/chunkhound-optimized/ && \
 RUN /app/dist/chunkhound-optimized/chunkhound-optimized --version
 
 # Create artifact collection stage
-FROM ubuntu:20.04 AS artifact-collector
+# CRITICAL: Must use same Ubuntu 16.04 base as builder to maintain compatibility
+FROM ubuntu:16.04 AS artifact-collector
 
 # Install required tools
 RUN apt-get update && apt-get install -y \
@@ -95,7 +104,7 @@ RUN cd binaries && \
 
 # Generate build metadata with GLIBC info
 RUN echo "Build Date: $(date -u)" > metadata/build-info.txt && \
-    echo "Platform: ubuntu-20.04-linux" >> metadata/build-info.txt && \
+    echo "Platform: ubuntu-16.04-linux" >> metadata/build-info.txt && \
     echo "Architecture: $(uname -m)" >> metadata/build-info.txt && \
     file binaries/chunkhound-optimized/chunkhound-optimized >> metadata/build-info.txt && \
     du -sh binaries/chunkhound-optimized >> metadata/build-info.txt && \

@@ -256,9 +256,10 @@ build_ubuntu() {
     local output_dir="$DIST_DIR/chunkhound-ubuntu-amd64"
     local docker_tag="chunkhound:build-$BUILD_TIMESTAMP"
 
-    log_info "Building with Docker (linux/amd64) using Ubuntu 20.04 for GLIBC compatibility..."
+    log_info "Building with Docker (linux/amd64) using Ubuntu 16.04 for GLIBC compatibility..."
 
-    # Build Docker image using Ubuntu 20.04 Dockerfile for GLIBC compatibility
+    # CRITICAL: Build Docker image using Ubuntu 16.04 Dockerfile for maximum GLIBC compatibility
+    # Ubuntu 16.04 is the MINIMUM SYSTEM REQUIREMENT - do not regress this version
     local build_cmd="docker build --platform linux/amd64 -f Dockerfile.ubuntu20 --tag $docker_tag"
 
     if [[ "$VERBOSE" == true ]]; then
@@ -276,7 +277,7 @@ build_ubuntu() {
     # Create output directory
     mkdir -p "$output_dir"
 
-    # Copy binary from container (Ubuntu 20.04 build)
+    # Copy binary from container (Ubuntu 16.04 build)
     docker cp "$container_name":/artifacts/binaries/chunkhound-optimized/. "$output_dir/"
 
     # Clean up container
@@ -297,12 +298,12 @@ build_ubuntu() {
     # Create compressed archive
     log_info "Creating compressed archive..."
     cd "$DIST_DIR"
-    tar -czf "chunkhound-ubuntu20-amd64.tar.gz" "chunkhound-ubuntu-amd64/"
+    tar -czf "chunkhound-ubuntu16-amd64.tar.gz" "chunkhound-ubuntu-amd64/"
 
-    log_success "Ubuntu 20.04 compatible binary built successfully"
+    log_success "Ubuntu 16.04 compatible binary built successfully"
     log_info "Binary: $output_dir/chunkhound-optimized"
-    log_info "Archive: $DIST_DIR/chunkhound-ubuntu20-amd64.tar.gz"
-    log_info "GLIBC compatibility: Ubuntu 20.04.6 LTS and newer"
+    log_info "Archive: $DIST_DIR/chunkhound-ubuntu16-amd64.tar.gz"
+    log_info "GLIBC compatibility: Ubuntu 16.04 LTS and newer (MINIMUM SYSTEM REQUIREMENT)"
 }
 
 # Validate built binaries
