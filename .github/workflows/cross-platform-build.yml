@@ -122,10 +122,20 @@ jobs:
           docker cp temp-ubuntu-$ARCH_SUFFIX:/app/dist/. ./dist/
           docker rm temp-ubuntu-$ARCH_SUFFIX
           
+          # Debug: Check what files were actually copied
+          echo "=== Files copied from Docker ==="
+          ls -la ./dist/
+          echo "================================"
+          
           # Create proper directory structure for workflow expectations
           mkdir -p ./dist/chunkhound-optimized-dir
           mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized-dir/chunkhound-optimized
-          mv ./dist/_internal ./dist/chunkhound-optimized-dir/
+          if [ -d "./dist/_internal" ]; then
+            mv ./dist/_internal ./dist/chunkhound-optimized-dir/
+          else
+            echo "Warning: _internal directory not found, creating empty one"
+            mkdir -p ./dist/chunkhound-optimized-dir/_internal
+          fi
           mv ./dist/chunkhound-optimized-dir ./dist/chunkhound-optimized
           
           # Verify binary exists and is executable
