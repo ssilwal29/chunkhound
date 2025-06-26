@@ -6,6 +6,7 @@ This version eliminates unnecessary data collection and optimizes for fast start
 
 import os
 import sys
+import platform
 from pathlib import Path
 
 # Get the project root directory
@@ -169,6 +170,10 @@ except Exception as e:
 
 datas.extend(tiktoken_ext_datas)
 
+# Platform-specific settings
+is_windows = platform.system() == 'Windows'
+should_strip = not is_windows  # Disable stripping on Windows to prevent DLL loading issues
+
 # Aggressive exclusions to reduce size and startup time
 excludes = [
     # Remove large unused packages
@@ -258,7 +263,7 @@ exe = EXE(
     name='chunkhound-optimized',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,  # Strip debug symbols
+    strip=should_strip,  # Disable stripping on Windows to prevent DLL loading issues
     upx=False,   # Keep UPX disabled for now
     console=True,
     disable_windowed_traceback=False,
@@ -273,7 +278,7 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=True,  # Strip debug symbols from all binaries
+    strip=should_strip,  # Disable stripping on Windows to prevent DLL loading issues from all binaries
     upx=False,   # Keep UPX disabled for startup performance
     upx_exclude=[],
     name='chunkhound-optimized',
