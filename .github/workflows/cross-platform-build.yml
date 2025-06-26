@@ -125,18 +125,11 @@ jobs:
           # Debug: Check what files were actually copied
           echo "=== Files copied from Docker ==="
           ls -la ./dist/
+          echo "=== Contents of chunkhound-optimized directory ==="
+          ls -la ./dist/chunkhound-optimized/
           echo "================================"
           
-          # Create proper directory structure for workflow expectations
-          mkdir -p ./dist/chunkhound-optimized-dir
-          mv ./dist/chunkhound-optimized ./dist/chunkhound-optimized-dir/chunkhound-optimized
-          if [ -d "./dist/_internal" ]; then
-            mv ./dist/_internal ./dist/chunkhound-optimized-dir/
-          else
-            echo "Warning: _internal directory not found, creating empty one"
-            mkdir -p ./dist/chunkhound-optimized-dir/_internal
-          fi
-          mv ./dist/chunkhound-optimized-dir ./dist/chunkhound-optimized
+          # The chunkhound-optimized directory is already correctly structured
           
           # Verify binary exists and is executable
           if [ -f "./dist/chunkhound-optimized/chunkhound-optimized" ]; then
