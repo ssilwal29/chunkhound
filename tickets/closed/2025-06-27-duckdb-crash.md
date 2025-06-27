@@ -1,3 +1,23 @@
+# 2025-06-27 - [BUG] DuckDB Crash During WAL Replay with Large Chunks
+**Priority**: High
+
+**Root Cause**: DuckDB crashes during WAL replay when processing extremely large code chunks (105KB+) in `StringStats::Update`. The crash occurs at memory address `0x00000000000000a7` during string statistics calculation.
+
+**Key Evidence**:
+- Crash in `duckdb::StringStats::Update` during WAL replay
+- Two 105,653-character chunks containing entire `DuckDBProvider` class
+- Segmentation fault (`EXC_BAD_ACCESS`) on macOS Intel x86_64
+- Memory access violation in DuckDB's string processing during INSERT replay
+
+**Resolution**: Recent chunking improvements should prevent oversized chunks that trigger this DuckDB internal bug.
+
+# History
+
+## 2025-06-27
+**ANALYSIS COMPLETE**: Identified root cause as extremely large string chunks (105KB+) causing memory corruption in DuckDB's `StringStats::Update` during WAL replay. The chunking logic created abnormally large chunks by including entire class definitions. Recent fixes to chunking size limits should prevent this issue from recurring.
+
+**Crash Report**:
+
 Below is a crash report of chunkhound:
 ```
 -------------------------------------
