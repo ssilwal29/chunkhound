@@ -442,8 +442,9 @@ class OpenAIEmbeddingProvider:
 
     def estimate_tokens(self, text: str) -> int:
         """Estimate token count for a text."""
-        # Simple estimation: ~4 characters per token for English text
-        return max(1, len(text) // 4)
+        # Conservative estimation: ~3 characters per token for code/technical text
+        # This accounts for more punctuation and shorter tokens in code
+        return max(1, len(text) // 3)
 
     def estimate_batch_tokens(self, texts: list[str]) -> int:
         """Estimate total token count for a batch of texts."""
@@ -460,8 +461,11 @@ class OpenAIEmbeddingProvider:
         if max_tokens <= 0:
             raise ValidationError("max_tokens", max_tokens, "max_tokens must be positive")
 
-        # Simple character-based chunking (approximation)
-        max_chars = max_tokens * 4
+        # Use safety margin to ensure we stay well under token limits
+        safety_margin = max(200, max_tokens // 5)  # 20% margin, minimum 200 tokens
+        safe_max_tokens = max_tokens - safety_margin
+        # Use conservative 3 chars per token for code/technical text
+        max_chars = safe_max_tokens * 3
 
         if len(text) <= max_chars:
             return [text]

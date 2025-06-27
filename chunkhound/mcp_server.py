@@ -36,7 +36,8 @@ except ImportError:
     pass
 
 try:
-    from .core.config import EmbeddingConfig, EmbeddingProviderFactory
+    from .core.config import EmbeddingProviderFactory
+    from .core.config.unified_config import ChunkHoundConfig
     from .database import Database
     from .embeddings import EmbeddingManager
     from .file_watcher import FileWatcherManager
@@ -46,7 +47,8 @@ try:
     from .task_coordinator import TaskCoordinator, TaskPriority
 except ImportError:
     # Handle running as standalone script or PyInstaller binary
-    from chunkhound.core.config import EmbeddingConfig, EmbeddingProviderFactory
+    from chunkhound.core.config import EmbeddingProviderFactory
+    from chunkhound.core.config.unified_config import ChunkHoundConfig
     from chunkhound.database import Database
     from chunkhound.embeddings import EmbeddingManager
     from chunkhound.file_watcher import FileWatcherManager
@@ -68,11 +70,11 @@ _periodic_indexer: PeriodicIndexManager | None = None
 server = Server("ChunkHound Code Search")
 
 
-def _build_mcp_registry_config(config: EmbeddingConfig, db_path: Path) -> dict[str, Any]:
+def _build_mcp_registry_config(config: ChunkHoundConfig, db_path: Path) -> dict[str, Any]:
     """Build registry configuration for MCP server mode.
 
     Args:
-        config: Embedding configuration
+        config: Unified configuration
         db_path: Database path
 
     Returns:
@@ -82,23 +84,23 @@ def _build_mcp_registry_config(config: EmbeddingConfig, db_path: Path) -> dict[s
         'database': {
             'path': str(db_path),
             'type': 'duckdb',
-            'batch_size': 500,  # Default batch size
+            'batch_size': config.indexing.db_batch_size,
         },
         'embedding': {
-            'batch_size': 100,  # Default embedding batch size
-            'max_concurrent_batches': 3,
-            'provider': config.provider,
-            'model': config.model,
+            'batch_size': config.embedding.batch_size,
+            'max_concurrent_batches': config.embedding.max_concurrent_batches,
+            'provider': config.embedding.provider,
+            'model': config.get_embedding_model(),
         }
     }
 
     # Add API key if available
-    if config.api_key:
-        registry_config['embedding']['api_key'] = config.api_key.get_secret_value()
+    if config.embedding.api_key:
+        registry_config['embedding']['api_key'] = config.embedding.api_key.get_secret_value()
 
     # Add base URL if available
-    if config.base_url:
-        registry_config['embedding']['base_url'] = config.base_url
+    if config.embedding.base_url:
+        registry_config['embedding']['base_url'] = config.embedding.base_url
 
     return registry_config
 
@@ -161,28 +163,25 @@ async def server_lifespan(server: Server) -> AsyncIterator[dict]:
             print("Server lifespan: Embedding manager initialized", file=sys.stderr)
 
         # Setup embedding provider and registry configuration
-        embedding_config = None
+        unified_config = None
         try:
-            # Load configuration with environment variable support
-            embedding_config = EmbeddingConfig()
+            # Load unified configuration with environment variable support
+            unified_config = ChunkHoundConfig.load_hierarchical()
 
-            # Maintain backward compatibility with legacy OPENAI_API_KEY
-            legacy_api_key = os.environ.get('OPENAI_API_KEY')
-            if not embedding_config.api_key and legacy_api_key:
-                from pydantic import SecretStr
-                embedding_config.api_key = SecretStr(legacy_api_key)
-                if embedding_config.provider == 'openai' and "CHUNKHOUND_DEBUG" in os.environ:
-                    print("Server lifespan: Using legacy OPENAI_API_KEY for backward compatibility", file=sys.stderr)
+            # Validate configuration for MCP
+            missing_config = unified_config.get_missing_config()
+            if missing_config and "CHUNKHOUND_DEBUG" in os.environ:
+                print(f"Server lifespan: Missing config (will use defaults): {missing_config}", file=sys.stderr)
 
             # Create provider using unified factory
-            provider = EmbeddingProviderFactory.create_provider(embedding_config)
+            provider = EmbeddingProviderFactory.create_provider(unified_config.embedding)
             _embedding_manager.register_provider(provider, set_default=True)
 
             if "CHUNKHOUND_DEBUG" in os.environ:
-                print(f"Server lifespan: Embedding provider registered successfully: {embedding_config.provider} with model {embedding_config.model}", file=sys.stderr)
+                print(f"Server lifespan: Embedding provider registered successfully: {unified_config.embedding.provider} with model {unified_config.get_embedding_model()}", file=sys.stderr)
 
             # CRITICAL FIX: Configure registry BEFORE database creation
-            registry_config = _build_mcp_registry_config(embedding_config, db_path)
+            registry_config = _build_mcp_registry_config(unified_config, db_path)
             configure_registry(registry_config)
 
             if "CHUNKHOUND_DEBUG" in os.environ:
@@ -452,6 +451,37 @@ async def process_file_change(file_path: Path, event_type: str):
             else:
                 # Process file (created, modified, moved)
                 if file_path.exists() and file_path.is_file():
+                    # Check if file should be excluded before processing
+                    try:
+                        from .core.config.unified_config import ChunkHoundConfig
+                    except ImportError:
+                        from chunkhound.core.config.unified_config import ChunkHoundConfig
+                    
+                    exclude_patterns = ChunkHoundConfig.get_default_exclude_patterns()
+                    
+                    from fnmatch import fnmatch
+                    should_exclude = False
+                    
+                    # Get relative path from current working directory for pattern matching
+                    base_dir = Path.cwd()
+                    try:
+                        rel_path = file_path.relative_to(base_dir)
+                    except ValueError:
+                        # File is not under base directory, use absolute path
+                        rel_path = file_path
+                    
+                    for exclude_pattern in exclude_patterns:
+                        # Check both relative and absolute paths
+                        if (fnmatch(str(rel_path), exclude_pattern) or 
+                            fnmatch(str(file_path), exclude_pattern)):
+                            should_exclude = True
+                            break
+                    
+                    if should_exclude:
+                        if "CHUNKHOUND_DEBUG" in os.environ:
+                            print(f"MCP: Skipped excluded file: {file_path}", file=sys.stderr)
+                        return
+
                     # Phase 4: Verify file is fully written before processing
                     if not await _wait_for_file_completion(file_path):
                         return  # Skip if file not ready

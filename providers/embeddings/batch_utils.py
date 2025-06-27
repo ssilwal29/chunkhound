@@ -32,7 +32,7 @@ async def handle_token_limit_error(
         List of embeddings for all texts
 
     Raises:
-        ValidationError: If single text can't be chunked further
+        ValueError: If single text can't be chunked further
     """
     if len(texts) > 1:
         # Calculate optimal number of splits based on token estimates
@@ -72,9 +72,8 @@ async def handle_token_limit_error(
 
         if len(chunks) == 1:
             # Text can't be split further, raise error
-            from chunkhound.exceptions import ValidationError
-            raise ValidationError(
-                "text", text, f"Text too large to embed even after chunking: {len(text)} chars"
+            raise ValueError(
+                f"Text too large to embed even after chunking: {len(text)} chars"
             )
 
         if single_text_fallback:

@@ -1,4 +1,4 @@
-"""Indexing coordinator service for ChunkHound - orchestrates file indexing workflows."""
+"""Indexing coordinator service for ChunkHound - orchestrates indexing workflows."""
 
 import zlib
 from fnmatch import fnmatch
@@ -18,17 +18,7 @@ from .base_service import BaseService
 
 
 class IndexingCoordinator(BaseService):
-    """Coordinates file indexing workflows with parsing, chunking, and embedding generation."""
-
-    # Default exclude patterns for file discovery
-    DEFAULT_EXCLUDE_PATTERNS = [
-        "*/__pycache__/*", 
-        "*/node_modules/*", 
-        "*/.git/*", 
-        "*/venv/*", 
-        "*/.venv/*", 
-        "*/.mypy_cache/*"
-    ]
+    """Coordinates file indexing workflows with parsing, chunking, and embeddings."""
 
     def __init__(
         self,
@@ -97,10 +87,10 @@ class IndexingCoordinator(BaseService):
 
     def _calculate_file_crc32(self, file_path: Path) -> int | None:
         """Calculate CRC32 checksum of file content.
-        
+
         Args:
             file_path: Path to the file
-            
+
         Returns:
             CRC32 checksum as integer, or None if file cannot be read
         """
@@ -112,7 +102,9 @@ class IndexingCoordinator(BaseService):
             logger.warning(f"Failed to calculate CRC32 for {file_path}: {e}")
             return None
 
-    async def process_file(self, file_path: Path, skip_embeddings: bool = False) -> dict[str, Any]:
+    async def process_file(
+        self, file_path: Path, skip_embeddings: bool = False
+    ) -> dict[str, Any]:
         """Process a single file through the complete indexing pipeline.
 
         Args:
@@ -126,7 +118,11 @@ class IndexingCoordinator(BaseService):
         try:
             # Validate file exists and is readable
             if not file_path.exists() or not file_path.is_file():
-                return {"status": "error", "error": f"File not found: {file_path}", "chunks": 0}
+                return {
+                    "status": "error",
+                    "error": f"File not found: {file_path}",
+                    "chunks": 0
+                }
 
             # Detect language
             language = self.detect_file_language(file_path)
@@ -136,15 +132,21 @@ class IndexingCoordinator(BaseService):
             # Get parser for language
             parser = self.get_parser_for_language(language)
             if not parser:
-                return {"status": "error", "error": f"No parser available for {language}", "chunks": 0}
+                return {
+                    "status": "error",
+                    "error": f"No parser available for {language}",
+                    "chunks": 0
+                }
 
             # Get file stats for storage/update operations
             file_stat = file_path.stat()
 
             logger.debug(f"Processing file: {file_path}")
-            logger.debug(f"File stat: mtime={file_stat.st_mtime}, size={file_stat.st_size}")
+            logger.debug(
+                f"File stat: mtime={file_stat.st_mtime}, size={file_stat.st_size}"
+            )
 
-            # Note: Removed timestamp checking logic - if IndexingCoordinator.process_file()
+            # Note: Removed timestamp checking logic - if process_file()
             # was called, the file needs processing. File watcher handles change detection.
 
             # Parse file content - can return ParseResult or List[Dict[str, Any]]
@@ -170,7 +172,8 @@ class IndexingCoordinator(BaseService):
             if not chunks:
                 return {"status": "no_chunks", "chunks": 0}
 
-            # Check if this is an existing file that has been modified BEFORE storing the record
+            # Check if this is an existing file that has been modified
+            # BEFORE storing the record
             existing_file = self._db.get_file_by_path(str(file_path))
             is_file_modified = False
 
@@ -182,10 +185,12 @@ class IndexingCoordinator(BaseService):
 
                 if isinstance(existing_file, dict):
                     # Try different possible timestamp field names
-                    for field in ['mtime', 'modified_time', 'modification_time', 'timestamp']:
+                    for field in [
+                        'mtime', 'modified_time', 'modification_time', 'timestamp'
+                    ]:
                         if field in existing_file and existing_file[field] is not None:
                             timestamp_value = existing_file[field]
-                            if isinstance(timestamp_value, (int, float)):
+                            if isinstance(timestamp_value, int | float):
                                 existing_mtime = float(timestamp_value)
                                 break
                             elif hasattr(timestamp_value, "timestamp"):
@@ -205,7 +210,7 @@ class IndexingCoordinator(BaseService):
                     # mtime unchanged, check CRC32 for robust content detection
                     current_crc32 = self._calculate_file_crc32(file_path)
                     existing_crc32 = existing_file.get('content_crc32') if isinstance(existing_file, dict) else getattr(existing_file, 'content_crc32', None)
-                    
+
                     if current_crc32 is None:
                         # Can't calculate CRC32, assume modified for safety
                         is_file_modified = True
@@ -486,7 +491,7 @@ class IndexingCoordinator(BaseService):
         """Store or update file record in database with CRC32."""
         # Calculate CRC32 for content tracking
         content_crc32 = self._calculate_file_crc32(file_path)
-        
+
         # Check if file already exists
         existing_file = self._db.get_file_by_path(str(file_path))
 
@@ -594,8 +599,11 @@ class IndexingCoordinator(BaseService):
             logger.error(f"Failed to remove file {file_path}: {e}")
             return 0
 
-    async def generate_missing_embeddings(self) -> dict[str, Any]:
+    async def generate_missing_embeddings(self, exclude_patterns: list[str] | None = None) -> dict[str, Any]:
         """Generate embeddings for chunks that don't have them.
+
+        Args:
+            exclude_patterns: Optional file patterns to exclude from embedding generation
 
         Returns:
             Dictionary with generation results
@@ -612,7 +620,7 @@ class IndexingCoordinator(BaseService):
                 embedding_provider=self._embedding_provider
             )
 
-            return await embedding_service.generate_missing_embeddings()
+            return await embedding_service.generate_missing_embeddings(exclude_patterns=exclude_patterns)
 
         except Exception as e:
             logger.error(f"Failed to generate missing embeddings: {e}")
@@ -644,7 +652,7 @@ class IndexingCoordinator(BaseService):
 
             # Extract data for embedding generation
             valid_chunk_ids = [chunk_id for chunk_id, _, _ in valid_chunk_data]
-            valid_chunks = [chunk for _, chunk, _ in valid_chunk_data]
+            [chunk for _, chunk, _ in valid_chunk_data]
             texts = [text for _, _, text in valid_chunk_data]
 
             # Generate embeddings (progress tracking handled by missing embeddings phase)
@@ -687,8 +695,7 @@ class IndexingCoordinator(BaseService):
         patterns: list[str] | None,
         exclude_patterns: list[str] | None
     ) -> list[Path]:
-        """Discover files in directory matching patterns."""
-        files = []
+        """Discover files in directory matching patterns with efficient exclude filtering."""
 
         # Default patterns for supported languages
         if not patterns:
@@ -699,63 +706,145 @@ class IndexingCoordinator(BaseService):
             # Add special filenames
             patterns.extend(["Makefile", "makefile", "GNUmakefile", "gnumakefile"])
 
-        # Default exclude patterns
+        # Default exclude patterns from unified config
         if not exclude_patterns:
-            exclude_patterns = self.DEFAULT_EXCLUDE_PATTERNS
+            from chunkhound.core.config.unified_config import ChunkHoundConfig
+            exclude_patterns = ChunkHoundConfig.get_default_exclude_patterns()
 
-        for pattern in patterns:
-            for file_path in directory.rglob(pattern):
-                if file_path.is_file():
-                    # Check exclude patterns using proper fnmatch against both absolute and relative paths
-                    should_exclude = False
-                    rel_path = file_path.relative_to(directory)
+        # Use custom directory walker that respects exclude patterns during traversal
+        discovered_files = self._walk_directory_with_excludes(directory, patterns, exclude_patterns)
 
-                    for exclude_pattern in exclude_patterns:
-                        # Test both relative path and absolute path for pattern matching
-                        if (fnmatch(str(rel_path), exclude_pattern) or
-                            fnmatch(str(file_path), exclude_pattern)):
-                            should_exclude = True
-                            break
+        return sorted(discovered_files)
 
-                    if not should_exclude:
-                        files.append(file_path)
+    def _walk_directory_with_excludes(
+        self,
+        directory: Path,
+        patterns: list[str],
+        exclude_patterns: list[str]
+    ) -> list[Path]:
+        """Custom directory walker that skips excluded directories during traversal.
 
-        return sorted(files)
+        Args:
+            directory: Root directory to walk
+            patterns: File patterns to include
+            exclude_patterns: Patterns to exclude (applied to both files and directories)
+
+        Returns:
+            List of file paths that match include patterns and don't match exclude patterns
+        """
+        files = []
+
+        def should_exclude_path(path: Path, base_dir: Path) -> bool:
+            """Check if a path should be excluded based on exclude patterns."""
+            try:
+                rel_path = path.relative_to(base_dir)
+            except ValueError:
+                # Path is not under base directory, use absolute path
+                rel_path = path
+
+            for exclude_pattern in exclude_patterns:
+                # Test both relative and absolute paths for pattern matching
+                if (fnmatch(str(rel_path), exclude_pattern) or
+                    fnmatch(str(path), exclude_pattern)):
+                    return True
+            return False
+
+        def should_include_file(file_path: Path) -> bool:
+            """Check if a file matches any of the include patterns."""
+            try:
+                rel_path = file_path.relative_to(directory)
+            except ValueError:
+                # File is not under base directory, use absolute path
+                rel_path = file_path
+            
+            for pattern in patterns:
+                rel_path_str = str(rel_path)
+                filename = file_path.name
+                
+                # Handle **/ prefix patterns (common from CLI conversion)
+                if pattern.startswith('**/'):
+                    simple_pattern = pattern[3:]  # Remove **/ prefix (e.g., *.md from **/*.md)
+                    
+                    # Match against:
+                    # 1. Full relative path for nested files (e.g., "docs/guide.md" matches "**/*.md")
+                    # 2. Simple pattern for root-level files (e.g., "README.md" matches "*.md")
+                    # 3. Filename only for simple patterns (e.g., "guide.md" matches "*.md")
+                    if (fnmatch(rel_path_str, pattern) or
+                        fnmatch(rel_path_str, simple_pattern) or
+                        fnmatch(filename, simple_pattern)):
+                        return True
+                else:
+                    # Regular pattern - check both relative path and filename
+                    if (fnmatch(rel_path_str, pattern) or 
+                        fnmatch(filename, pattern)):
+                        return True
+            return False
+
+        # Walk directory tree manually to control traversal
+        def walk_recursive(current_dir: Path) -> None:
+            """Recursively walk directory, skipping excluded paths."""
+            try:
+                # Get directory contents
+                for entry in current_dir.iterdir():
+                    # Skip if path should be excluded
+                    if should_exclude_path(entry, directory):
+                        continue
+
+                    if entry.is_file():
+                        # Check if file matches include patterns
+                        if should_include_file(entry):
+                            files.append(entry)
+                    elif entry.is_dir():
+                        # Recursively walk subdirectory (already checked it's not excluded)
+                        walk_recursive(entry)
+
+            except (PermissionError, OSError) as e:
+                # Log warning but continue with other directories
+                logger.debug(f"Skipping directory due to access error: {current_dir} - {e}")
+
+        # Start walking from the root directory
+        walk_recursive(directory)
+
+        return files
 
     def _cleanup_orphaned_files(self, directory: Path, current_files: list[Path], exclude_patterns: list[str] | None = None) -> int:
         """Remove database entries for files that no longer exist in the directory.
-        
+
         Args:
             directory: Directory being processed
             current_files: List of files currently in the directory
             exclude_patterns: Optional list of exclude patterns to check against
-            
+
         Returns:
             Number of orphaned files cleaned up
         """
         try:
             # Create set of absolute paths for fast lookup
             current_file_paths = {str(file_path.absolute()) for file_path in current_files}
-            
+
             # Get all files in database that are under this directory
             directory_str = str(directory.absolute())
             query = """
-                SELECT id, path 
-                FROM files 
+                SELECT id, path
+                FROM files
                 WHERE path LIKE ? || '%'
             """
             db_files = self._db.execute_query(query, [directory_str])
-            
+
             # Find orphaned files (in DB but not on disk or excluded by patterns)
             orphaned_files = []
-            patterns_to_check = exclude_patterns if exclude_patterns else self.DEFAULT_EXCLUDE_PATTERNS
-            
+            if not exclude_patterns:
+                from chunkhound.core.config.unified_config import ChunkHoundConfig
+                patterns_to_check = ChunkHoundConfig.get_default_exclude_patterns()
+            else:
+                patterns_to_check = exclude_patterns
+
             for db_file in db_files:
                 file_path = db_file['path']
-                
+
                 # Check if file should be excluded based on current patterns
                 should_exclude = False
-                
+
                 # Convert to Path for relative path calculation
                 file_path_obj = Path(file_path)
                 try:
@@ -763,18 +852,18 @@ class IndexingCoordinator(BaseService):
                 except ValueError:
                     # File is not under the directory, use absolute path
                     rel_path = file_path_obj
-                
+
                 for exclude_pattern in patterns_to_check:
                     # Check both relative and absolute paths
-                    if (fnmatch(str(rel_path), exclude_pattern) or 
+                    if (fnmatch(str(rel_path), exclude_pattern) or
                         fnmatch(file_path, exclude_pattern)):
                         should_exclude = True
                         break
-                
+
                 # Mark for removal if not in current files or should be excluded
                 if file_path not in current_file_paths or should_exclude:
                     orphaned_files.append(file_path)
-            
+
             # Remove orphaned files with progress bar
             orphaned_count = 0
             if orphaned_files:
@@ -783,11 +872,11 @@ class IndexingCoordinator(BaseService):
                         if self._db.delete_file_completely(file_path):
                             orphaned_count += 1
                         pbar.update(1)
-                
+
                 logger.info(f"Cleaned up {orphaned_count} orphaned files from database")
-            
+
             return orphaned_count
-            
+
         except Exception as e:
             logger.warning(f"Failed to cleanup orphaned files: {e}")
             return 0

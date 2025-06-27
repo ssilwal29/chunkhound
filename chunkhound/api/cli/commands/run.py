@@ -19,6 +19,11 @@ from chunkhound.signal_coordinator import CLICoordinator
 from registry import configure_registry, create_indexing_coordinator
 
 from ..parsers.run_parser import process_batch_arguments
+from ..utils.config_helpers import (
+    args_to_config,
+    create_legacy_registry_config,
+    validate_config_for_command,
+)
 from ..utils.output import OutputFormatter, format_stats
 from ..utils.validation import (
     ensure_database_directory,
@@ -61,8 +66,10 @@ async def run_command(args: argparse.Namespace) -> None:
         config = _build_registry_config(args)
         configure_registry(config)
 
-        # Set up file patterns
-        include_patterns, exclude_patterns = _setup_file_patterns(args)
+        # Set up file patterns using unified config
+        project_dir = Path(args.path) if hasattr(args, 'path') else Path.cwd()
+        unified_config = args_to_config(args, project_dir)
+        include_patterns, exclude_patterns = _setup_file_patterns_from_config(unified_config, args)
         formatter.info(f"Include patterns: {include_patterns}")
         formatter.verbose_info(f"Exclude patterns: {exclude_patterns}")
 
@@ -83,12 +90,12 @@ async def run_command(args: argparse.Namespace) -> None:
 
         # Generate missing embeddings if enabled
         if not args.no_embeddings:
-            await _generate_missing_embeddings(indexing_coordinator, formatter)
+            await _generate_missing_embeddings(indexing_coordinator, formatter, exclude_patterns)
 
         # Start watch mode if enabled
         if args.watch:
             formatter.info("Initial indexing complete. Starting watch mode...")
-            await _start_watch_mode(args, indexing_coordinator, formatter)
+            await _start_watch_mode(args, indexing_coordinator, formatter, exclude_patterns)
         formatter.success("Run command completed successfully")
 
     except KeyboardInterrupt:
@@ -162,49 +169,38 @@ def _build_registry_config(args: argparse.Namespace) -> dict[str, Any]:
     Returns:
         Configuration dictionary
     """
-    config = {
-        'database': {
-            'path': str(args.db),
-            'type': 'duckdb',
-            'batch_size': getattr(args, 'db_batch_size', 500),
-        },
-        'embedding': {
-            'batch_size': getattr(args, 'embedding_batch_size', 100),
-            'max_concurrent_batches': getattr(args, 'max_concurrent', 3),
-        }
-    }
-
-    if not args.no_embeddings:
-        # Apply default models for providers that support them
-        model = args.model
-        if not model:
-            if args.provider == 'openai':
-                model = 'text-embedding-3-small'
-            elif args.provider == 'bge-in-icl':
-                model = 'bge-in-icl'
-            # tei and openai-compatible require explicit configuration
-        
-        config['embedding'].update({
-            'provider': args.provider,
-            'model': model,
-            'api_key': args.api_key,
-            'base_url': args.base_url,
-        })
-
-    return config
+    # Convert CLI args to unified configuration
+    project_dir = Path(args.path) if hasattr(args, 'path') else Path.cwd()
+    unified_config = args_to_config(args, project_dir)
+    
+    # Validate configuration for the index command
+    validation_errors = validate_config_for_command(unified_config, 'index')
+    if validation_errors:
+        for error in validation_errors:
+            logger.error(f"Configuration error: {error}")
+        raise ValueError("Invalid configuration")
+    
+    # Convert to legacy registry format
+    return create_legacy_registry_config(
+        unified_config, 
+        no_embeddings=getattr(args, 'no_embeddings', False)
+    )
 
 
-def _setup_file_patterns(args: argparse.Namespace) -> tuple[list[str], list[str]]:
-    """Set up file inclusion and exclusion patterns.
+def _setup_file_patterns_from_config(config: Any, args: argparse.Namespace) -> tuple[list[str], list[str]]:
+    """Set up file inclusion and exclusion patterns from unified config.
 
     Args:
-        args: Parsed arguments
+        config: Unified configuration object
+        args: Parsed arguments (for fallback)
 
     Returns:
         Tuple of (include_patterns, exclude_patterns)
     """
-    # Default file patterns for supported languages if none specified
-    if args.include:
+    # Use configuration include patterns, fallback to CLI args, then defaults
+    if config.indexing.include_patterns:
+        include_patterns = config.indexing.include_patterns
+    elif hasattr(args, 'include') and args.include:
         include_patterns = args.include
     else:
         # Get patterns from Language enum and convert to simple glob patterns
@@ -216,33 +212,10 @@ def _setup_file_patterns(args: argparse.Namespace) -> tuple[list[str], list[str]
         patterns.extend(["Makefile", "makefile", "GNUmakefile", "gnumakefile"])
         include_patterns = patterns
 
-    # Default exclusion patterns
-    default_excludes = [
-        "*/.git/*", ".git/*",
-        "*/__pycache__/*", "__pycache__/*",
-        "*/venv/*", "venv/*",
-        "*/env/*", "env/*",
-        "*/.venv/*", ".venv/*",
-        "*/node_modules/*", "node_modules/*",
-        "*/dist/*", "dist/*",
-        "*/build/*", "build/*",
-        "*/target/*", "target/*",  # Java/Rust builds
-        "*/bin/*", "bin/*",        # C# builds
-        # Python dependency directories
-        "*/site-packages/*", "site-packages/*",
-        "*/.tox/*", ".tox/*",
-        "*/.pytest_cache/*", ".pytest_cache/*",
-        "*/eggs/*", "eggs/*",
-        "*/.eggs/*", ".eggs/*",
-        "*/pip-cache/*", "pip-cache/*",
-        "*/.mypy_cache/*", ".mypy_cache/*",
-        # IDE directories
-        "*/.idea/*", ".idea/*",
-        "*/.vscode/*", ".vscode/*",
-        "*/coverage/*", "coverage/*",
-    ]
-
-    exclude_patterns = list(args.exclude) + default_excludes
+    # Use configuration exclude patterns, fallback to CLI args, then defaults
+    exclude_patterns = list(config.indexing.exclude_patterns)
+    if hasattr(args, 'exclude') and args.exclude:
+        exclude_patterns.extend(args.exclude)
 
     return include_patterns, exclude_patterns
 
@@ -360,16 +333,17 @@ async def _process_directory(
         raise RuntimeError(f"Directory processing failed: {result}")
 
 
-async def _generate_missing_embeddings(indexing_coordinator, formatter: OutputFormatter) -> None:
+async def _generate_missing_embeddings(indexing_coordinator, formatter: OutputFormatter, exclude_patterns: list[str]) -> None:
     """Generate missing embeddings for chunks.
 
     Args:
         indexing_coordinator: Indexing coordinator service
         formatter: Output formatter
+        exclude_patterns: File patterns to exclude from embedding generation
     """
     formatter.info("Checking for missing embeddings...")
 
-    embed_result = await indexing_coordinator.generate_missing_embeddings()
+    embed_result = await indexing_coordinator.generate_missing_embeddings(exclude_patterns=exclude_patterns)
 
     if embed_result["status"] == "success":
         formatter.success(f"Generated {embed_result['generated']} missing embeddings")
@@ -382,13 +356,14 @@ async def _generate_missing_embeddings(indexing_coordinator, formatter: OutputFo
         formatter.warning(f"Embedding generation failed: {embed_result}")
 
 
-async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, formatter: OutputFormatter) -> None:
+async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, formatter: OutputFormatter, exclude_patterns: list[str]) -> None:
     """Start file watching mode.
 
     Args:
         args: Parsed arguments
         indexing_coordinator: Indexing coordinator service
         formatter: Output formatter
+        exclude_patterns: File patterns to exclude from processing
     """
     formatter.info("🔍 Starting file watching mode...")
 
@@ -414,6 +389,29 @@ async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, form
                 else:
                     # Process file (created, modified, moved)
                     if file_path.exists() and file_path.is_file():
+                        # Check if file should be excluded before processing
+                        from fnmatch import fnmatch
+                        should_exclude = False
+                        
+                        # Get relative path from watch directory for pattern matching
+                        watch_dir = Path(args.path) if hasattr(args, 'path') else Path.cwd()
+                        try:
+                            rel_path = file_path.relative_to(watch_dir)
+                        except ValueError:
+                            # File is not under watch directory, use absolute path
+                            rel_path = file_path
+                        
+                        for exclude_pattern in exclude_patterns:
+                            # Check both relative and absolute paths
+                            if (fnmatch(str(rel_path), exclude_pattern) or 
+                                fnmatch(str(file_path), exclude_pattern)):
+                                should_exclude = True
+                                break
+                        
+                        if should_exclude:
+                            formatter.verbose_info(f"🚫 Skipped excluded file: {file_path}")
+                            return
+                        
                         result = await indexing_coordinator.process_file(file_path)
                         if result["status"] == "success":
                             formatter.info(f"📝 Processed {event_type} file: {file_path} ({result['chunks']} chunks)")

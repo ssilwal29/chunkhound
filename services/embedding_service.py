@@ -93,13 +93,15 @@ class EmbeddingService(BaseService):
     async def generate_missing_embeddings(
         self,
         provider_name: str | None = None,
-        model_name: str | None = None
+        model_name: str | None = None,
+        exclude_patterns: list[str] | None = None
     ) -> dict[str, Any]:
         """Generate embeddings for all chunks that don't have them yet.
 
         Args:
             provider_name: Optional specific provider to generate for
             model_name: Optional specific model to generate for
+            exclude_patterns: Optional file patterns to exclude from embedding generation
 
         Returns:
             Dictionary with generation statistics
@@ -113,7 +115,7 @@ class EmbeddingService(BaseService):
             target_model = model_name or self._embedding_provider.model
 
             # First, just get the count and IDs of chunks without embeddings (fast query)
-            chunk_ids_without_embeddings = self._get_chunk_ids_without_embeddings(target_provider, target_model)
+            chunk_ids_without_embeddings = self._get_chunk_ids_without_embeddings(target_provider, target_model, exclude_patterns)
 
             if not chunk_ids_without_embeddings:
                 return {"status": "complete", "generated": 0, "message": "All chunks have embeddings"}
@@ -475,19 +477,39 @@ class EmbeddingService(BaseService):
         logger.debug(f"Created {len(batches)} fixed-size batches (size={batch_size}) from {len(chunk_data)} chunks")
         return batches
 
-    def _get_chunk_ids_without_embeddings(self, provider: str, model: str) -> list[ChunkId]:
+    def _get_chunk_ids_without_embeddings(self, provider: str, model: str, exclude_patterns: list[str] | None = None) -> list[ChunkId]:
         """Get just the IDs of chunks that don't have embeddings (fast query)."""
         # Get all embedding tables
         embedding_tables = self._get_all_embedding_tables()
 
+        # Build exclude patterns filter if provided
+        exclude_filter = ""
+        exclude_params = []
+        if exclude_patterns:
+            exclude_conditions = []
+            for pattern in exclude_patterns:
+                # Convert glob-style patterns to SQL LIKE patterns
+                # Handle ** (recursive directory match) -> %
+                # Handle * (single level match) -> %
+                # Handle ? (single character) -> _
+                sql_pattern = pattern.replace('**/', '%').replace('/**', '/%').replace('*', '%').replace('?', '_')
+                # Handle remaining ** patterns
+                sql_pattern = sql_pattern.replace('%%', '%')
+                exclude_conditions.append("f.path NOT LIKE ?")
+                exclude_params.append(sql_pattern)
+            if exclude_conditions:
+                exclude_filter = f"AND ({' AND '.join(exclude_conditions)})"
+
         if not embedding_tables:
-            # No embedding tables exist, return all chunk IDs
-            query = """
+            # No embedding tables exist, return all chunk IDs (with exclude filter)
+            query = f"""
                 SELECT c.id
                 FROM chunks c
+                JOIN files f ON c.file_id = f.id
+                WHERE 1=1 {exclude_filter}
                 ORDER BY c.id
             """
-            result = self._db.execute_query(query)
+            result = self._db.execute_query(query, exclude_params)
             return [row["id"] for row in result]
 
         # Build NOT EXISTS clauses for all embedding tables
@@ -502,16 +524,17 @@ class EmbeddingService(BaseService):
                 )
             """)
 
-        # Get just the IDs (fast query)
+        # Get just the IDs (fast query) with exclude filter
         query = f"""
             SELECT c.id
             FROM chunks c
-            WHERE {' AND '.join(not_exists_clauses)}
+            JOIN files f ON c.file_id = f.id
+            WHERE {' AND '.join(not_exists_clauses)} {exclude_filter}
             ORDER BY c.id
         """
 
-        # Parameters need to be repeated for each table
-        params = [provider, model] * len(embedding_tables)
+        # Parameters need to be repeated for each table, plus exclude params
+        params = [provider, model] * len(embedding_tables) + exclude_params
         result = self._db.execute_query(query, params)
         return [row["id"] for row in result]
 

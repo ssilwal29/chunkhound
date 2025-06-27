@@ -273,8 +273,9 @@ class PeriodicIndexManager:
 
         try:
             # Discover all files in base directory
-            # Use default exclude patterns from IndexingCoordinator
-            exclude_patterns = self._indexing_coordinator.DEFAULT_EXCLUDE_PATTERNS
+            # Use default exclude patterns from unified config
+            from chunkhound.core.config.unified_config import ChunkHoundConfig
+            exclude_patterns = ChunkHoundConfig.get_default_exclude_patterns()
             files = self._indexing_coordinator._discover_files(
                 self._base_directory, 
                 patterns=None,  # Use default patterns
