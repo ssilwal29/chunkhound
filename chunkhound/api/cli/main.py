@@ -122,7 +122,6 @@ def create_parser() -> argparse.ArgumentParser:
     """
     # Import parsers dynamically to avoid early loading
     from .parsers import create_main_parser, setup_subparsers
-    from .parsers.config_parser import add_config_subparser
     from .parsers.mcp_parser import add_mcp_subparser
     from .parsers.run_parser import add_run_subparser
 
@@ -132,7 +131,6 @@ def create_parser() -> argparse.ArgumentParser:
     # Add command subparsers
     add_run_subparser(subparsers)
     add_mcp_subparser(subparsers)
-    add_config_subparser(subparsers)
 
     return parser
 
@@ -156,10 +154,6 @@ async def async_main() -> None:
             # Dynamic import to avoid early chunkhound module loading
             from .commands.run import run_command
             await run_command(args)
-        elif args.command == "config":
-            # Dynamic import to avoid early chunkhound module loading
-            from .commands.config import config_command
-            await config_command(args)
         else:
             logger.error(f"Unknown command: {args.command}")
             sys.exit(1)

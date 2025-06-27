@@ -6,5 +6,4 @@
 __all__ = [
     "run_command",
     "mcp_command",
-    "config_command",
 ]

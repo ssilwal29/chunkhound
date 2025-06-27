@@ -22,8 +22,6 @@ Examples:
   chunkhound index /path/to/project
   chunkhound index . --db ./chunks.duckdb
   chunkhound index /code --include "*.py" --exclude "*/tests/*"
-  chunkhound config list
-  chunkhound config add openai --type openai --base-url https://api.openai.com/v1
   chunkhound mcp --db ./chunks.duckdb
         """,
     )
