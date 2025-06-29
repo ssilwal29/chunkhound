@@ -113,8 +113,8 @@ def add_run_subparser(subparsers: Any) -> argparse.ArgumentParser:
 
     run_parser.add_argument(
         "--package",
-        type=str,
-        help="Index an installed Python package instead of a directory",
+        action="append",
+        help="Index an installed Python package (can be used multiple times)",
     )
 
     # Add common argument groups

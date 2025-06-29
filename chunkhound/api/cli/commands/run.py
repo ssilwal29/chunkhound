@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 import importlib.util
+import importlib.metadata
 
 from loguru import logger
 
@@ -52,6 +53,14 @@ def _resolve_package_path(package: str) -> Optional[Path]:
     return None
 
 
+def _get_package_version(package: str) -> Optional[str]:
+    """Return installed version for a package, or None if unavailable."""
+    try:
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
 async def run_command(args: argparse.Namespace) -> None:
     """Execute the run command using the service layer.
 
@@ -61,17 +70,32 @@ async def run_command(args: argparse.Namespace) -> None:
     # Initialize output formatter
     formatter = OutputFormatter(verbose=args.verbose)
 
-    if getattr(args, "package", None):
-        pkg_path = _resolve_package_path(args.package)
+    packages: list[str] = getattr(args, "package", []) or []
+    paths_to_process: list[tuple[Path, str | None, str | None]] = []
+
+    # Include codebase path if no packages provided or path not default
+    if not packages or args.path != Path("."):
+        paths_to_process.append((Path(args.path), None, None))
+
+    # Resolve installed packages
+    for pkg in packages:
+        pkg_path = _resolve_package_path(pkg)
         if not pkg_path:
-            formatter.error(f"Package not found: {args.package}")
+            formatter.error(f"Package not found: {pkg}")
             sys.exit(1)
-        args.path = pkg_path
-        formatter.info(f"Resolved package '{args.package}' to {pkg_path}")
+        version = _get_package_version(pkg) or "unknown"
+        formatter.info(f"Resolved package '{pkg}' ({version}) to {pkg_path}")
+        paths_to_process.append((pkg_path, pkg, version))
 
     # Display startup information
     formatter.info(f"Starting ChunkHound v{__version__}")
-    formatter.info(f"Processing directory: {args.path}")
+    if paths_to_process:
+        formatter.info(f"Processing {len(paths_to_process)} target(s)")
+        for p, pkg, ver in paths_to_process:
+            if pkg:
+                formatter.info(f"  Package {pkg} ({ver}) -> {p}")
+            else:
+                formatter.info(f"  Directory: {p}")
     formatter.info(f"Database: {args.db}")
 
     # Process and validate batch arguments (includes deprecation warnings)
@@ -92,36 +116,37 @@ async def run_command(args: argparse.Namespace) -> None:
         config = _build_registry_config(args)
         configure_registry(config)
 
-        # Set up file patterns using unified config
-        project_dir = Path(args.path) if hasattr(args, 'path') else Path.cwd()
-        unified_config = args_to_config(args, project_dir)
-        include_patterns, exclude_patterns = _setup_file_patterns_from_config(unified_config, args)
-        formatter.info(f"Include patterns: {include_patterns}")
-        formatter.verbose_info(f"Exclude patterns: {exclude_patterns}")
-
         # Initialize services
         indexing_coordinator = create_indexing_coordinator()
-
         formatter.success(f"Service layer initialized: {args.db}")
 
-        # Get initial stats
-        initial_stats = await indexing_coordinator.get_stats()
-        formatter.info(f"Initial stats: {format_stats(initial_stats)}")
+        # Loop over all targets
+        for path, pkg, ver in paths_to_process:
+            args.path = path
+            formatter.info(f"Processing directory: {path}")
 
-        # Perform directory processing
-        await _process_directory(
-            indexing_coordinator, args, formatter,
-            include_patterns, exclude_patterns
-        )
+            project_dir = Path(path)
+            unified_config = args_to_config(args, project_dir)
+            include_patterns, exclude_patterns = _setup_file_patterns_from_config(unified_config, args)
+            formatter.info(f"Include patterns: {include_patterns}")
+            formatter.verbose_info(f"Exclude patterns: {exclude_patterns}")
 
-        # Generate missing embeddings if enabled
-        if not args.no_embeddings:
-            await _generate_missing_embeddings(indexing_coordinator, formatter, exclude_patterns)
+            initial_stats = await indexing_coordinator.get_stats()
+            formatter.info(f"Initial stats: {format_stats(initial_stats)}")
 
-        # Start watch mode if enabled
-        if args.watch:
+            await _process_directory(
+                indexing_coordinator, args, formatter,
+                include_patterns, exclude_patterns
+            )
+
+            if not args.no_embeddings:
+                await _generate_missing_embeddings(indexing_coordinator, formatter, exclude_patterns)
+
+        # Start watch mode only when a single codebase directory is indexed
+        if args.watch and len(paths_to_process) == 1 and paths_to_process[0][1] is None:
             formatter.info("Initial indexing complete. Starting watch mode...")
             await _start_watch_mode(args, indexing_coordinator, formatter, exclude_patterns)
+
         formatter.success("Run command completed successfully")
 
     except KeyboardInterrupt:
@@ -474,4 +499,4 @@ async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, form
         formatter.error(f"❌ File watching failed: {e}")
 
 
-__all__ = ["run_command", "_resolve_package_path"]
+__all__ = ["run_command", "_resolve_package_path", "_get_package_version"]
