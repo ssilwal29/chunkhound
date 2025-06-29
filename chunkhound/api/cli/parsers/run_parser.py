@@ -111,6 +111,12 @@ def add_run_subparser(subparsers: Any) -> argparse.ArgumentParser:
         help="Directory path to index (default: current directory)",
     )
 
+    run_parser.add_argument(
+        "--package",
+        action="append",
+        help="Index an installed Python package (can be used multiple times)",
+    )
+
     # Add common argument groups
     add_common_arguments(run_parser)
     add_database_argument(run_parser)

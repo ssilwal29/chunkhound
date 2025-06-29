@@ -44,6 +44,9 @@ export OPENAI_API_KEY="sk-your-key-here"
 # Index your codebase first (creates chunkhound.db in current directory)
 uv run chunkhound index
 
+# Index one or more installed packages
+uv run chunkhound index --package requests --package numpy
+
 # OR: Index and watch for changes (standalone mode)
 uv run chunkhound index --watch
 
