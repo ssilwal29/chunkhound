@@ -4,7 +4,8 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+import importlib.util
 
 from loguru import logger
 
@@ -34,6 +35,23 @@ from ..utils.validation import (
 )
 
 
+def _resolve_package_path(package: str) -> Optional[Path]:
+    """Resolve the filesystem path for an installed package."""
+    spec = importlib.util.find_spec(package)
+    if spec is None:
+        return None
+
+    if spec.submodule_search_locations:
+        # Package directory
+        return Path(list(spec.submodule_search_locations)[0])
+
+    if spec.origin:
+        # Single file module
+        return Path(spec.origin).parent
+
+    return None
+
+
 async def run_command(args: argparse.Namespace) -> None:
     """Execute the run command using the service layer.
 
@@ -42,6 +60,14 @@ async def run_command(args: argparse.Namespace) -> None:
     """
     # Initialize output formatter
     formatter = OutputFormatter(verbose=args.verbose)
+
+    if getattr(args, "package", None):
+        pkg_path = _resolve_package_path(args.package)
+        if not pkg_path:
+            formatter.error(f"Package not found: {args.package}")
+            sys.exit(1)
+        args.path = pkg_path
+        formatter.info(f"Resolved package '{args.package}' to {pkg_path}")
 
     # Display startup information
     formatter.info(f"Starting ChunkHound v{__version__}")
@@ -448,4 +474,4 @@ async def _start_watch_mode(args: argparse.Namespace, indexing_coordinator, form
         formatter.error(f"❌ File watching failed: {e}")
 
 
-__all__ = ["run_command"]
+__all__ = ["run_command", "_resolve_package_path"]

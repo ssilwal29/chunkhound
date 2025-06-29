@@ -41,6 +41,9 @@ chunkhound run .
 # Index specific directory
 chunkhound run /path/to/your/project
 
+# Index an installed Python package
+chunkhound run --package requests
+
 # Watch for changes in real-time
 chunkhound run . --watch
 
