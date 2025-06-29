@@ -43,6 +43,10 @@ export OPENAI_API_KEY="sk-your-key-here"
 
 # Index your codebase first (creates chunkhound.db in current directory)
 uv run chunkhound index
+# Index a PyPI package
+uv run chunkhound package --pypi somepkg
+# Or index a GitHub repo
+uv run chunkhound package --github https://github.com/user/repo
 
 # OR: Index and watch for changes (standalone mode)
 uv run chunkhound index --watch

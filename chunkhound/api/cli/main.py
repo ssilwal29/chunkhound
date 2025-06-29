@@ -15,6 +15,7 @@ def is_mcp_command() -> bool:
     """Check if this is an MCP command before any imports."""
     return len(sys.argv) >= 2 and sys.argv[1] == "mcp"
 
+
 # Handle MCP command immediately before any imports
 if is_mcp_command():
     # Set MCP mode environment early
@@ -41,6 +42,7 @@ if is_mcp_command():
     # Launch MCP server directly via import (fixes PyInstaller sys.executable recursion bug)
     try:
         from chunkhound.mcp_entry import main_sync
+
         main_sync()
     except ImportError as e:
         print(f"Error: Could not import chunkhound.mcp_entry: {e}", file=sys.stderr)
@@ -74,13 +76,13 @@ def setup_logging(verbose: bool = False) -> None:
         logger.add(
             sys.stderr,
             level="DEBUG",
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
         )
     else:
         logger.add(
             sys.stderr,
             level="INFO",
-            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
         )
 
 
@@ -99,14 +101,43 @@ def validate_args(args: argparse.Namespace) -> None:
 
         # Validate provider-specific arguments for index command
         if not args.no_embeddings:
-            if args.provider in ['tei', 'bge-in-icl'] and not args.base_url:
-                exit_on_validation_error(f"--base-url required for {args.provider} provider")
+            if args.provider in ["tei", "bge-in-icl"] and not args.base_url:
+                exit_on_validation_error(
+                    f"--base-url required for {args.provider} provider"
+                )
 
-            if args.provider == 'openai-compatible' and not args.model:
-                exit_on_validation_error(f"--model required for {args.provider} provider")
-            
-            if args.provider == 'openai-compatible' and not args.base_url:
-                exit_on_validation_error(f"--base-url required for {args.provider} provider")
+            if args.provider == "openai-compatible" and not args.model:
+                exit_on_validation_error(
+                    f"--model required for {args.provider} provider"
+                )
+
+            if args.provider == "openai-compatible" and not args.base_url:
+                exit_on_validation_error(
+                    f"--base-url required for {args.provider} provider"
+                )
+
+    elif args.command == "package":
+        if not args.pypi and not args.github:
+            exit_on_validation_error("Specify --pypi or --github")
+
+        if not ensure_database_directory(args.db):
+            exit_on_validation_error("Cannot access database directory")
+
+        if not args.no_embeddings:
+            if args.provider in ["tei", "bge-in-icl"] and not args.base_url:
+                exit_on_validation_error(
+                    f"--base-url required for {args.provider} provider"
+                )
+
+            if args.provider == "openai-compatible" and not args.model:
+                exit_on_validation_error(
+                    f"--model required for {args.provider} provider"
+                )
+
+            if args.provider == "openai-compatible" and not args.base_url:
+                exit_on_validation_error(
+                    f"--base-url required for {args.provider} provider"
+                )
 
     elif args.command == "mcp":
         # Ensure database directory exists for MCP server
@@ -124,12 +155,14 @@ def create_parser() -> argparse.ArgumentParser:
     from .parsers import create_main_parser, setup_subparsers
     from .parsers.mcp_parser import add_mcp_subparser
     from .parsers.run_parser import add_run_subparser
+    from .parsers.package_parser import add_package_subparser
 
     parser = create_main_parser()
     subparsers = setup_subparsers(parser)
 
     # Add command subparsers
     add_run_subparser(subparsers)
+    add_package_subparser(subparsers)
     add_mcp_subparser(subparsers)
 
     return parser
@@ -153,7 +186,12 @@ async def async_main() -> None:
         if args.command == "index":
             # Dynamic import to avoid early chunkhound module loading
             from .commands.run import run_command
+
             await run_command(args)
+        elif args.command == "package":
+            from .commands.package import package_command
+
+            await package_command(args)
         else:
             logger.error(f"Unknown command: {args.command}")
             sys.exit(1)
